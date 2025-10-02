@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using CounterStrikeSharp.API.Core;
+using ZombieModPlugin.Models;
 
 namespace ZombieModPlugin.Configs;
 
@@ -79,12 +80,60 @@ public class MessagesConfig
 
 public class ZombieConfig
 {
-    public Zombie[] ZombieTypes { get; set; } = [];
+    public Zombie[] ZombieTypes { get; set; } = new[]
+    {
+        new Zombie
+        {
+            Id = "brute",
+            Name = "Brute",
+            Health = 300,
+            Speed = 0.85f,
+            Damage = 40,
+            Gravity = 1.0f,
+            DefaultAbilities = new[] { AbilityType.DamageResistance },
+            UnlockableAbilities = new[] { AbilityType.Berserk, AbilityType.Roar, AbilityType.SelfDestruct }
+        },
+        new Zombie
+        {
+            Id = "runner",
+            Name = "Runner",
+            Health = 150,
+            Speed = 1.3f,
+            Damage = 20,
+            Gravity = 1.0f,
+            DefaultAbilities = [AbilityType.SpeedBoost],
+            UnlockableAbilities = [AbilityType.Pounce, AbilityType.ToxicAura, AbilityType.BlindSpit]
+        },
+        new Zombie
+        {
+            Id = "stalker",
+            Name = "Stalker",
+            Health = 200,
+            Speed = 1.1f,
+            Damage = 25,
+            Gravity = 1.0f,
+            DefaultAbilities = [AbilityType.Invisibility],
+            UnlockableAbilities = [AbilityType.Roar, AbilityType.Pounce, AbilityType.SpeedBoost]
+        },
+        new Zombie
+        {
+            Id = "medic",
+            Name = "Infected Healer",
+            Health = 220,
+            Speed = 1.0f,
+            Damage = 15,
+            Gravity = 1.0f,
+            DefaultAbilities = [AbilityType.HealthRegen],
+            UnlockableAbilities = [AbilityType.ToxicAura, AbilityType.SelfDestruct, AbilityType.BlindSpit]
+        }
+    };
+
     public int StartingLevel { get; set; } = 1;
     public int MaxLevel { get; set; } = 5;
     public int XPPerKill { get; set; } = 25;
     public int MaxAbilitiesPerZombie { get; set; } = 4;
 }
+
 
 public class HumanConfig
 {
