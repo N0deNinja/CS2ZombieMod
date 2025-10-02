@@ -2,6 +2,8 @@ using ZombieModPlugin.Abilities;
 
 public class HealthRegenExecutor : Ability
 {
+    private readonly int healPerTick = 20;
+
     public HealthRegenExecutor()
         : base(
             name: "Health Regeneration",
@@ -26,7 +28,8 @@ public class HealthRegenExecutor : Ability
             intervalSeconds: 1f,
             onTick: pawn =>
             {
-                var newHealth = Math.Min(pawn.Health + 20, 100);
+                var maxHealth = context.ZombieType.Health;
+                var newHealth = Math.Min(pawn.Health + healPerTick, maxHealth);
                 pawn.Health = newHealth;
             }
         );
