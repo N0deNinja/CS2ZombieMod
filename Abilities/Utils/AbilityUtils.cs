@@ -1,8 +1,7 @@
 using CounterStrikeSharp.API.Core;
-using CounterStrikeSharp.API.Modules.Entities;
 using ZombieModPlugin.States;
 
-namespace ZombieModPlugin.Abilities;
+namespace ZombieModPlugin.Abilities.Utils;
 
 public static class AbilityUtils
 {

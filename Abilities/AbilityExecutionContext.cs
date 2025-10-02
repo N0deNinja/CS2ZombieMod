@@ -1,21 +1,22 @@
 using CounterStrikeSharp.API.Core;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.States;
+using ZombieModPlugin.Zombies.Models;
 
 namespace ZombieModPlugin.Abilities;
 
 public class AbilityExecutionContext
 {
-    public CCSPlayerController Player { get; init; }
-    public PlayerState PlayerState { get; init; }
-    public Zombie ZombieType { get; init; }
-    public int PlayerLevel { get; init; }
-    public BasePlugin Plugin { get; init; }
-    public BaseConfig Config { get; init; }
-    public DateTime ServerTime { get; init; }
+    public required CCSPlayerController Player { get; init; }
+    public required PlayerState PlayerState { get; init; }
+    public required Zombie ZombieType { get; init; }
+    public required int PlayerLevel { get; init; }
+    public required BasePlugin Plugin { get; init; }
+    public required BaseConfig Config { get; init; }
+    public required DateTime ServerTime { get; init; }
 
     public List<CCSPlayerController> AllPlayers { get; init; } = [];
-    public Action<AbilityType, float> SetCooldown { get; init; }
+    public required Action<AbilityType, float> SetCooldown { get; init; }
 }
 
 

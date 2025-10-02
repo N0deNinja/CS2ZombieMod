@@ -1,4 +1,6 @@
-using ZombieModPlugin.Abilities;
+using ZombieModPlugin.Abilities.Utils;
+
+namespace ZombieModPlugin.Abilities.Executors;
 
 public class SpeedBoostExecutor : Ability
 {

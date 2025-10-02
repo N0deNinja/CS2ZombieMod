@@ -1,5 +1,4 @@
-using CounterStrikeSharp.API.Core;
-using ZombieModPlugin.Abilities;
+namespace ZombieModPlugin.Abilities;
 
 public class Ability
 {

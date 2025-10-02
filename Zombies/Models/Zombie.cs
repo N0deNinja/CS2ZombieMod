@@ -1,18 +1,18 @@
 using ZombieModPlugin.Abilities;
-
+namespace ZombieModPlugin.Zombies.Models;
 
 public class Zombie
 {
-    public string Id { get; set; }
-    public string Name { get; set; }
+    public required string Id { get; set; }
+    public required string Name { get; set; }
     public int Health { get; set; }
     public float Speed { get; set; }
     public int Damage { get; set; }
 
     public float Gravity { get; set; }
 
-    public AbilityType[] DefaultAbilities { get; set; }
-    public AbilityType[] UnlockableAbilities { get; set; }
+    public required AbilityType[] DefaultAbilities { get; set; }
+    public required AbilityType[] UnlockableAbilities { get; set; }
 
     // Empty constructor for JSON Parsing
     public Zombie() { }
