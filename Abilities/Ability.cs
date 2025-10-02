@@ -1,4 +1,5 @@
 using CounterStrikeSharp.API.Core;
+using ZombieModPlugin.Abilities;
 
 public class Ability
 {
@@ -19,7 +20,7 @@ public class Ability
         Duration = duration;
     }
 
-    public virtual void Execute(CCSPlayerController player)
+    public virtual void Execute(AbilityExecutionContext context)
     {
 
     }

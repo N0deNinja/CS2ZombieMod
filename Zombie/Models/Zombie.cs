@@ -1,4 +1,4 @@
-using ZombieModPlugin.Models;
+using ZombieModPlugin.Abilities;
 
 public class Zombie
 {
