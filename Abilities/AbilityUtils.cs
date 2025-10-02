@@ -23,4 +23,28 @@ public static class AbilityUtils
             }
         });
     }
+
+    public static void RunPeriodicEffect(
+        CCSPlayerController player,
+        float durationSeconds,
+        float intervalSeconds,
+        Action<CCSPlayerPawn> onTick)
+    {
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid) return;
+
+        Task.Run(async () =>
+        {
+            int ticks = (int)Math.Floor(durationSeconds / intervalSeconds);
+            for (int i = 0; i < ticks; i++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds));
+
+                if (!player.IsValid || !pawn.IsValid)
+                    break;
+
+                onTick(pawn);
+            }
+        });
+    }
 }

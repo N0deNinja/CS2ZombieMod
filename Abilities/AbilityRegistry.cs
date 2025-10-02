@@ -1,4 +1,4 @@
-namespace ZombieModPlugin.Registry;
+namespace ZombieModPlugin.Abilities;
 
 public class AbilityRegistry
 {

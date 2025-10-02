@@ -20,8 +20,5 @@ public class Ability
         Duration = duration;
     }
 
-    public virtual void Execute(AbilityExecutionContext context)
-    {
-
-    }
+    public virtual void Execute(AbilityExecutionContext context) { }
 }
