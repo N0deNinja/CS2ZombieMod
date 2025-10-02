@@ -1,6 +1,6 @@
 using ZombieModPlugin.Abilities.Utils;
 
-namespace ZombieModPlugin.Abilities;
+namespace ZombieModPlugin.Abilities.Executors;
 
 public class HealthRegenExecutor : Ability
 {
