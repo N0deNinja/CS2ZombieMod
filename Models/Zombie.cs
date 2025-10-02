@@ -2,7 +2,7 @@ using ZombieModPlugin.Models;
 
 public class Zombie
 {
-
+    public string Id { get; set; }
     public string Name { get; set; }
     public int Health { get; set; }
     public float Speed { get; set; }
@@ -14,8 +14,9 @@ public class Zombie
     public AbilityType[] UnlockableAbilities { get; set; }
 
     public Zombie() { }
-    public Zombie(string name, int health, float speed, int damage, float gravity, AbilityType[] defaultAbilities, AbilityType[] unlockableAbilities)
+    public Zombie(string id, string name, int health, float speed, int damage, float gravity, AbilityType[] defaultAbilities, AbilityType[] unlockableAbilities)
     {
+        Id = id;
         Name = name;
         Health = health;
         Speed = speed;
