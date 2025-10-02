@@ -13,6 +13,9 @@ public class Zombie
     public AbilityType[] DefaultAbilities { get; set; }
     public AbilityType[] UnlockableAbilities { get; set; }
 
+    // Empty constructor for JSON Parsing
+    public Zombie() { }
+
     public Zombie(string id, string name, int health, float speed, int damage, float gravity, AbilityType[] defaultAbilities, AbilityType[] unlockableAbilities)
     {
         Id = id;

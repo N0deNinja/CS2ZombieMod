@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 using CounterStrikeSharp.API.Core;
-using ZombieModPlugin.Models;
+using ZombieModPlugin.Abilities;
 
 namespace ZombieModPlugin.Configs;
 
