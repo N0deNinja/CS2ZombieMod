@@ -1,4 +1,4 @@
-namespace ZombieModPlugin.Models;
+namespace ZombieModPlugin.Abilities;
 
 public enum AbilityType
 {
