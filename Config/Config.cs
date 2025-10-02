@@ -11,6 +11,7 @@ public class BaseConfig : BasePluginConfig
     public GeneralConfig GeneralConfig { get; set; } = new();
     public ChatConfig ChatConfig { get; set; } = new();
     public CommandsConfig CommandsConfig { get; set; } = new();
+    public MessagesConfig MessagesConfig { get; set; } = new();
 }
 
 public class GeneralConfig
