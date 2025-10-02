@@ -1,0 +1,44 @@
+# C# build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+
+# Rider & VS Code config
+.idea/
+.vscode/
+
+# Build outputs
+*.dll
+*.exe
+*.pdb
+
+# Logs & dumps
+*.log
+*.dmp
+
+# VS Code junk
+.vscode/
+*.code-workspace
+
+# NuGet packages
+*.nupkg
+packages/
+*.snupkg
+
+# Environment settings
+.env
+*.db
+
+# JetBrains Rider
+*.DotSettings.user
+
+# CS2-specific compiled plugin outputs (if any)
+addons/counterstrikesharp/plugins/*
+
+# OS generated
+.DS_Store
+Thumbs.db
+desktop.ini
