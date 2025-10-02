@@ -6,6 +6,7 @@ public class HealthRegenExecutor : Ability
 
     public HealthRegenExecutor()
         : base(
+            id: "health_regen",
             name: "Health Regeneration",
             description: "Periodically increases your health.",
             cooldown: 10f,
@@ -22,17 +23,14 @@ public class HealthRegenExecutor : Ability
 
         context.SetCooldown(AbilityType.HealthRegen, Cooldown);
 
-        AbilityUtils.RunPeriodicEffect(
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.HealthRegen, Duration, context.PlayerState);
+
+        AbilityUtils.ApplyHealthRegen(
             player,
-            durationSeconds: Duration,
-            intervalSeconds: 1f,
-            onTick: pawn =>
-            {
-                var maxHealth = context.ZombieType.Health;
-                var newHealth = Math.Min(pawn.Health + healPerTick, maxHealth);
-                pawn.Health = newHealth;
-            }
+            healPerTick,
+            duration: Duration,
+            interval: 1f,
+            maxHealth: context.ZombieType.Health
         );
     }
-
 }

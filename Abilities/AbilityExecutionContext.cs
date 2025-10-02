@@ -1,11 +1,13 @@
 using CounterStrikeSharp.API.Core;
 using ZombieModPlugin.Configs;
+using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Abilities;
 
 public class AbilityExecutionContext
 {
     public CCSPlayerController Player { get; init; }
+    public PlayerState PlayerState { get; init; }
     public Zombie ZombieType { get; init; }
     public int PlayerLevel { get; init; }
     public BasePlugin Plugin { get; init; }

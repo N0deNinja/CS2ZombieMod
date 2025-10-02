@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
 
-namespace ZombieModPlugin.State;
+namespace ZombieModPlugin.States;
 
 public class PlayerState
 {
@@ -15,4 +15,5 @@ public class PlayerState
 
     public List<AbilityType> UnlockedAbilities { get; set; } = new();
     public Dictionary<AbilityType, DateTime> Cooldowns { get; set; } = new();
+    public HashSet<AbilityType> ActiveAbilities { get; set; } = new();
 }

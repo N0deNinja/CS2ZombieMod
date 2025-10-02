@@ -1,14 +1,15 @@
 using ZombieModPlugin.Abilities;
 
-public class SpeedBoostExecutor : Ability
+
+public class BerserkExecutor : Ability
 {
     private const float speedMultiplier = 1.5f;
 
-    public SpeedBoostExecutor()
+    public BerserkExecutor()
         : base(
-            id: "speed_boost",
-            name: "Speed Boost",
-            description: "Temporarily increases your movement speed.",
+            id: "berserk",
+            name: "Berserk",
+            description: "Temporarily increases your speed and damage.",
             cooldown: 10f,
             unlockCost: 100,
             duration: 5f)
@@ -21,10 +22,11 @@ public class SpeedBoostExecutor : Ability
         var playerPawn = player.PlayerPawn.Value;
         if (playerPawn == null) return;
 
-        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.SpeedBoost, Duration, context.PlayerState);
-        context.SetCooldown(AbilityType.SpeedBoost, Cooldown);
+        var state = context.PlayerState;
 
-
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, Duration, state);
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, Duration);
+
+        context.SetCooldown(AbilityType.Berserk, Cooldown);
     }
 }

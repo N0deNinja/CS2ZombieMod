@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities;
+using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Abilities;
 
@@ -24,6 +25,9 @@ public static class AbilityUtils
         });
     }
 
+    /// <summary>
+    /// Runs a periodic effect on a player every interval for a total duration.
+    /// </summary>
     public static void RunPeriodicEffect(
         CCSPlayerController player,
         float durationSeconds,
@@ -47,4 +51,48 @@ public static class AbilityUtils
             }
         });
     }
+
+
+    public static void ApplySpeedBoost(CCSPlayerController player, float multiplier, float duration)
+    {
+        RunTimedEffect(
+            player,
+            duration,
+            apply: pawn => pawn.VelocityModifier *= multiplier,
+            revert: pawn => pawn.VelocityModifier /= multiplier
+        );
+    }
+
+    public static void ApplyHealthRegen(CCSPlayerController player, int healPerTick, float duration, float interval, int maxHealth)
+    {
+        RunPeriodicEffect(
+            player,
+            duration,
+            interval,
+            onTick: pawn =>
+            {
+                if (pawn.Health < maxHealth)
+                {
+                    pawn.Health = Math.Min(pawn.Health + healPerTick, maxHealth);
+                }
+            }
+        );
+    }
+
+    public static void TrackActiveAbilityDuration(
+    CCSPlayerController player,
+    AbilityType ability,
+    float durationSeconds,
+    PlayerState state)
+    {
+        Task.Delay(TimeSpan.FromSeconds(durationSeconds)).ContinueWith(_ =>
+        {
+            if (player.IsValid)
+            {
+                state.ActiveAbilities.Remove(ability);
+            }
+        });
+    }
+
+
 }

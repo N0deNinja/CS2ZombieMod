@@ -1,5 +1,6 @@
 using ZombieModPlugin.Abilities;
 
+
 public class Zombie
 {
     public string Id { get; set; }
