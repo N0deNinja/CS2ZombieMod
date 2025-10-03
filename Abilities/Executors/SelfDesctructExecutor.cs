@@ -2,6 +2,8 @@ using ZombieModPlugin.Abilities.Utils;
 using ZombieModPlugin.Extensions;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API;
+using System.Drawing;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -29,38 +31,25 @@ public class SelfDestructExecutor : Ability
 
         var origin = pawn.AbsOrigin;
 
-        var nearbyPlayers = player.GetPlayersInProximity(context.AllPlayers, ExplosionRadius);
-
-        Console.WriteLine("nearby players - " + nearbyPlayers.Count);
-
-
-
-        foreach (var target in nearbyPlayers)
-        {
-            var targetPawn = target.PlayerPawn.Value;
-            if (targetPawn == null || target == player || targetPawn.AbsOrigin == null)
-                continue;
-
-            var dist = (targetPawn.AbsOrigin - origin).Length();
-            var damage = (int)(ExplosionDamage * (1 - (dist / ExplosionRadius)));
-
-            if (damage > 0)
-            {
-                targetPawn.Health -= damage;
-
-                if (targetPawn.Health <= 0)
-                {
-                    targetPawn.CommitSuicide(false, true);
-                }
-            }
-        }
-
         pawn.EmitSound("tr.C4Explode");
 
+        var explosion = Utilities.CreateEntityByName<CEnvExplosion>("env_explosion");
+
+        explosion!.Magnitude = 40;
+        explosion.PlayerDamage = 40f;
+        explosion.RadiusOverride = 400;
+        explosion.InnerRadius = 0f;
+        explosion.DamageForce = 4000f;
+        explosion.CreateDebris = true;
+        explosion.Render = Color.FromArgb(255, 255, 100, 0);
+
+        explosion!.DispatchSpawn();
+        explosion.Teleport(origin, null, null);
+        explosion.AcceptInput("Explode");
+
+
+
         player.ExecuteClientCommandFromServer("kill");
-
-        //TODO: Spawn explosion
-
         context.SetCooldown(AbilityType.SelfDestruct, Cooldown);
     }
 }
