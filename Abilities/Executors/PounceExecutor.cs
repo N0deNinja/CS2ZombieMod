@@ -5,7 +5,7 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class PounceExecutor : Ability
 {
-    private const float pounceForceMultiplier = 600f;
+    private const float pounceForceMultiplier = 700f;
 
     public PounceExecutor()
         : base(
@@ -27,6 +27,7 @@ public class PounceExecutor : Ability
         var state = context.PlayerState;
         var forward = playerPawn.EyeAngles.ToForwardVector();
         var pounceForce = forward * pounceForceMultiplier;
+        pounceForce.Z += 300f;
 
         playerPawn.Teleport(velocity: pounceForce);
 
