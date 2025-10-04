@@ -24,7 +24,7 @@ public class SpeedBoostExecutor : Ability
         if (playerPawn == null) return;
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.SpeedBoost, Duration, context.PlayerState);
-        context.SetCooldown(AbilityType.SpeedBoost, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.SpeedBoost, Cooldown);
 
 
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, Duration);

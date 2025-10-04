@@ -50,6 +50,6 @@ public class SelfDestructExecutor : Ability
 
 
         player.ExecuteClientCommandFromServer("kill");
-        context.SetCooldown(AbilityType.SelfDestruct, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.SelfDestruct, Cooldown);
     }
 }

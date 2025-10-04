@@ -28,6 +28,6 @@ public class BerserkExecutor : Ability
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, Duration, state);
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, Duration);
 
-        context.SetCooldown(AbilityType.Berserk, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.Berserk, Cooldown);
     }
 }

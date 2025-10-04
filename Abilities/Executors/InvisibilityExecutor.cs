@@ -32,7 +32,7 @@ public class InvisibilityExecutor : Ability
             revert: p => p.Render = Color.FromArgb(NormalAlpha, 255, 255, 255)
         );
 
-        context.SetCooldown(AbilityType.Invisibility, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.Invisibility, Cooldown);
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Invisibility, Duration, context.PlayerState);
     }
 }

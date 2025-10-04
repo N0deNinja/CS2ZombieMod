@@ -32,6 +32,6 @@ public class PounceExecutor : Ability
         playerPawn.Teleport(velocity: pounceForce);
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Pounce, Duration, state);
-        context.SetCooldown(AbilityType.Pounce, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.Pounce, Cooldown);
     }
 }

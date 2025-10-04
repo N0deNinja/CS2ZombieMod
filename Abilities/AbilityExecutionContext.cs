@@ -9,14 +9,10 @@ public class AbilityExecutionContext
 {
     public required CCSPlayerController Player { get; init; }
     public required PlayerState PlayerState { get; init; }
-    public required Zombie ZombieType { get; init; }
-    public required int PlayerLevel { get; init; }
     public required BasePlugin Plugin { get; init; }
     public required BaseConfig Config { get; init; }
     public required DateTime ServerTime { get; init; }
-
     public List<CCSPlayerController> AllPlayers { get; init; } = [];
-    public required Action<AbilityType, float> SetCooldown { get; init; }
 }
 
 

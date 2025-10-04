@@ -23,7 +23,7 @@ public class HealthRegenExecutor : Ability
         var playerPawn = player.PlayerPawn.Value;
         if (playerPawn == null) return;
 
-        context.SetCooldown(AbilityType.HealthRegen, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.HealthRegen, Cooldown);
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.HealthRegen, Duration, context.PlayerState);
 
