@@ -5,11 +5,29 @@ namespace ZombieModPlugin.States;
 
 public class PlayerState
 {
-    public bool IsZombie { get; set; } = false;
+    public bool _isZombie;
+
+    public bool IsZombie
+    {
+        get => _isZombie;
+        set
+        {
+            if (_isZombie == value)
+                return;
+
+            _isZombie = value;
+            OnZombieStateChanged?.Invoke(this, value);
+        }
+    }
+
+    // Event triggered whenever IsZombie changes
+    public event Action<PlayerState, bool>? OnZombieStateChanged;
+
     public Zombie? SelectedZombieType { get; set; }
 
     public Dictionary<string, ZombieProgression> ZombieProgression { get; set; } = new();
     public Dictionary<AbilityType, DateTime> GlobalCooldowns { get; set; } = [];
+    public HashSet<AbilityType> ActiveAbilities { get; set; } = [];
 
     public bool IsOnCooldown(AbilityType type, out double remainingSeconds)
     {

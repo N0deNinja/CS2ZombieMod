@@ -32,7 +32,7 @@ public class HealthRegenExecutor : Ability
             healPerTick,
             duration: Duration,
             interval: 1f,
-            maxHealth: context.ZombieType.Health
+            maxHealth: context.PlayerState!.SelectedZombieType!.Health
         );
     }
 }
