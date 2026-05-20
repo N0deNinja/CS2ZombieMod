@@ -9,6 +9,7 @@ public class BaseConfig : BasePluginConfig
     public ZombieConfig ZombieConfig { get; set; } = new();
     public HumanConfig HumanConfig { get; set; } = new();
     public GeneralConfig GeneralConfig { get; set; } = new();
+    public AdminTestConfig AdminTestConfig { get; set; } = new();
     public ChatConfig ChatConfig { get; set; } = new();
     public CommandsConfig CommandsConfig { get; set; } = new();
     public MessagesConfig MessagesConfig { get; set; } = new();
@@ -16,7 +17,31 @@ public class BaseConfig : BasePluginConfig
 
 public class GeneralConfig
 {
+    public int MinimumPlayersToStart { get; set; } = 2;
     public float FirstInfectionDelaySeconds { get; set; } = 15f;
+    public int RoundDurationSeconds { get; set; } = 300;
+    public int ActiveHudIntervalSeconds { get; set; } = 1;
+    public int WaitingHudIntervalSeconds { get; set; } = 1;
+    public float PostRoundDelaySeconds { get; set; } = 5f;
+    public int MinimumInitialZombies { get; set; } = 1;
+    public int MaximumInitialZombies { get; set; } = 0;
+    public float InitialZombieRatio { get; set; } = 0.15f;
+    public bool RandomizePlayerSpawns { get; set; } = true;
+    public float SpawnScatterDelaySeconds { get; set; } = 0.3f;
+    public bool IncludeBotsInRound { get; set; } = false;
+}
+
+public class AdminTestConfig
+{
+    public bool Enabled { get; set; } = true;
+    public bool RequireAdminPermissions { get; set; } = false;
+    public string[] RequiredPermissions { get; set; } = ["@css/root"];
+    public string MenuCommand { get; set; } = "zadmin";
+    public string ClassCommand { get; set; } = "zclass";
+    public string HumanCommand { get; set; } = "zhuman";
+    public string BotsCommand { get; set; } = "zbots";
+    public string RoundCommand { get; set; } = "zround";
+    public int DefaultBotCount { get; set; } = 3;
 }
 
 public class CommandsConfig
@@ -87,7 +112,7 @@ public class ZombieConfig
         {
             Id = "brute",
             Name = "Brute",
-            Health = 300,
+            Health = 5000,
             SpeedModifier = 0.85f,
             Damage = 40,
             Gravity = 1.0f,
@@ -98,7 +123,7 @@ public class ZombieConfig
         {
             Id = "runner",
             Name = "Runner",
-            Health = 150,
+            Health = 3000,
             SpeedModifier = 1.3f,
             Damage = 20,
             Gravity = 1.0f,
@@ -109,7 +134,7 @@ public class ZombieConfig
         {
             Id = "stalker",
             Name = "Stalker",
-            Health = 200,
+            Health = 3500,
             SpeedModifier = 1.1f,
             Damage = 25,
             Gravity = 1.0f,
@@ -120,7 +145,7 @@ public class ZombieConfig
         {
             Id = "medic",
             Name = "Infected Healer",
-            Health = 220,
+            Health = 4000,
             SpeedModifier = 1.0f,
             Damage = 15,
             Gravity = 1.0f,
@@ -131,7 +156,9 @@ public class ZombieConfig
 
     public int StartingLevel { get; set; } = 1;
     public int MaxLevel { get; set; } = 5;
+    public int InfectionHitsRequired { get; set; } = 3;
     public int XPPerKill { get; set; } = 25;
+    public int XPPerLevel { get; set; } = 100;
     public int MaxAbilitiesPerZombie { get; set; } = 4;
 }
 

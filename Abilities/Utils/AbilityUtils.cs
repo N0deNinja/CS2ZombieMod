@@ -1,4 +1,6 @@
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using ZombieModPlugin.Extensions;
 using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Abilities.Utils;
@@ -14,13 +16,18 @@ public static class AbilityUtils
         if (pawn is null || !pawn.IsValid) return;
 
         apply(pawn);
+        pawn.MarkPlayerStatsStateChanged();
 
         Task.Delay(TimeSpan.FromSeconds(durationSeconds)).ContinueWith(_ =>
         {
-            if (player.IsValid && player.PlayerPawn?.Value is { IsValid: true } currentPawn)
+            Server.NextFrame(() =>
             {
-                revert(currentPawn);
-            }
+                if (player.IsValid && player.PlayerPawn?.Value is { IsValid: true } currentPawn)
+                {
+                    revert(currentPawn);
+                    currentPawn.MarkPlayerStatsStateChanged();
+                }
+            });
         });
     }
 
@@ -43,10 +50,14 @@ public static class AbilityUtils
             {
                 await Task.Delay(TimeSpan.FromSeconds(intervalSeconds));
 
-                if (!player.IsValid || !pawn.IsValid)
-                    break;
+                Server.NextFrame(() =>
+                {
+                    if (!player.IsValid || player.PlayerPawn.Value is not { IsValid: true } currentPawn)
+                        return;
 
-                onTick(pawn);
+                    onTick(currentPawn);
+                    currentPawn.MarkPlayerStatsStateChanged();
+                });
             }
         });
     }
@@ -73,6 +84,7 @@ public static class AbilityUtils
                 if (pawn.Health < maxHealth)
                 {
                     pawn.Health = Math.Min(pawn.Health + healPerTick, maxHealth);
+                    pawn.MarkHealthStateChanged();
                 }
             }
         );

@@ -16,6 +16,7 @@ public class PlayerState
                 return;
 
             _isZombie = value;
+            InfectionHitsTaken = 0;
             OnZombieStateChanged?.Invoke(this, value);
         }
     }
@@ -24,6 +25,7 @@ public class PlayerState
     public event Action<PlayerState, bool>? OnZombieStateChanged;
 
     public Zombie? SelectedZombieType { get; set; }
+    public int InfectionHitsTaken { get; set; }
 
     public Dictionary<string, ZombieProgression> ZombieProgression { get; set; } = new();
     public Dictionary<AbilityType, DateTime> GlobalCooldowns { get; set; } = [];

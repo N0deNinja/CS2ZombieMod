@@ -5,16 +5,31 @@ namespace ZombieModPlugin.Extensions;
 
 public static class PlayerExtensions
 {
+    private const ulong BotStateKeyPrefix = 0xB000_0000_0000_0000;
+
     public static PlayerState GetState(this CCSPlayerController player, Dictionary<ulong, PlayerState> states)
     {
         if (!player.IsValid) throw new InvalidOperationException("Invalid player");
-        var steamId = player.SteamID;
-        if (!states.TryGetValue(steamId, out var state))
+
+        var key = player.GetStateKey();
+        if (!states.TryGetValue(key, out var state))
         {
             state = new PlayerState();
-            states[steamId] = state;
+            states[key] = state;
         }
         return state;
+    }
+
+    public static ulong GetStateKey(this CCSPlayerController player)
+    {
+        if (!player.IsValid)
+            throw new InvalidOperationException("Invalid player");
+
+        if (!player.IsBot)
+            return player.SteamID;
+
+        var userId = Convert.ToUInt64(player.UserId);
+        return BotStateKeyPrefix | userId;
     }
 
     public static List<CCSPlayerController> GetPlayersInProximity(

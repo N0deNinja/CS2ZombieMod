@@ -8,7 +8,8 @@ namespace ZombieModPlugin.Abilities
             { AbilityType.Berserk, new Executors.BerserkExecutor() },
             { AbilityType.HealthRegen, new Executors.HealthRegenExecutor() },
             { AbilityType.SpeedBoost, new Executors.SpeedBoostExecutor() },
-            { AbilityType.Invisibility, new Executors.InvisibilityExecutor() }
+            { AbilityType.Invisibility, new Executors.InvisibilityExecutor() },
+            { AbilityType.SelfDestruct, new Executors.SelfDestructExecutor() }
         };
 
         public static Ability? Get(AbilityType type) =>
