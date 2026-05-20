@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Modules.Commands;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Humans.Handlers;
+using ZombieModPlugin.Humans.Models;
 using ZombieModPlugin.Rounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
@@ -44,6 +45,7 @@ public class AdminTestHandler
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.MenuCommand, "zadmin")}", "Show Zombie Mod admin test menu.", OnAdminMenuCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.ClassCommand, "zclass")}", "Force yourself into a zombie class for testing.", OnZombieClassCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.HumanCommand, "zhuman")}", "Force yourself back to human for testing.", OnHumanCommand);
+        _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.HumanClassCommand, "hclass")}", "Force yourself into a human class for testing.", OnHumanCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.BotsCommand, "zbots")}", "Manage Zombie Mod test bots.", OnBotsCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.RoundCommand, "zround")}", "Manage Zombie Mod test round flow.", OnRoundCommand);
     }
@@ -88,7 +90,26 @@ public class AdminTestHandler
         if (!CanUse(player, command) || !TryGetPlayer(player, command, out var controller))
             return;
 
-        ForceHuman(controller, command);
+        if (command.ArgCount >= 2 && IsHelp(command.GetArg(1)))
+        {
+            PrintHumanClassList(command);
+            return;
+        }
+
+        if (command.ArgCount >= 2)
+        {
+            if (!TryResolveHuman(command.GetArg(1), out var humanClass))
+            {
+                command.ReplyToCommand($"Unknown human class: {command.GetArg(1)}");
+                PrintHumanClassList(command);
+                return;
+            }
+
+            ForceHuman(controller, command, humanClass);
+            return;
+        }
+
+        ForceHuman(controller, command, null);
     }
 
     private void OnBotsCommand(CCSPlayerController? player, CommandInfo command)
@@ -216,7 +237,8 @@ public class AdminTestHandler
         var restartIndex = index++;
         var statusIndex = index;
 
-        command.ReplyToCommand($"{humanIndex}. Become Human: css_zadmin human or css_zhuman");
+        command.ReplyToCommand($"{humanIndex}. Become Human: css_zadmin human or css_zhuman [classId]");
+        command.ReplyToCommand($"Human classes: {string.Join(", ", _config.HumanConfig.HumanClasses.Select(human => human.Id))}");
         command.ReplyToCommand($"{botRoundIndex}. Start bot test round: css_zadmin botround");
         command.ReplyToCommand($"{addBotsIndex}. Add CT bots: css_zadmin addbots");
         command.ReplyToCommand($"{kickBotsIndex}. Kick bots: css_zadmin kickbots");
@@ -259,7 +281,7 @@ public class AdminTestHandler
                 if (!TryGetPlayer(player, command, out var humanPlayer))
                     return;
 
-                ForceHuman(humanPlayer, command);
+                ForceHuman(humanPlayer, command, null);
                 break;
 
             case "botround":
@@ -317,6 +339,7 @@ public class AdminTestHandler
         EnsureProgression(state);
 
         state.SelectedZombieType = zombie;
+        state.SelectedHumanClass = null;
         state.IsZombie = true;
         _zombieHandler.OnBecomeZombie(player, state);
 
@@ -324,20 +347,21 @@ public class AdminTestHandler
         player.PrintToCenterHtml($"<font color='#ff3d3d'>{zombie.Name}</font><br><font color='#ffffff'>Admin test mode</font>", 5);
     }
 
-    private void ForceHuman(CCSPlayerController player, CommandInfo command)
+    private void ForceHuman(CCSPlayerController player, CommandInfo command, HumanClass? humanClass)
     {
         _roundManager.EnterAdminTestMode();
 
         var state = player.GetState(_playerStates);
         state.SelectedZombieType = null;
+        state.SelectedHumanClass = humanClass ?? _humanHandler.GetDefaultHumanClass();
         state.GlobalCooldowns.Clear();
         state.ActiveAbilities.Clear();
 
         state.IsZombie = false;
         _humanHandler.OnBecomeHuman(player, state);
 
-        command.ReplyToCommand($"[ZM ADMIN] Forced {player.PlayerName} back to human.");
-        player.PrintToCenterHtml("<font color='#7fd7ff'>Human</font><br><font color='#ffffff'>Admin test mode</font>", 5);
+        command.ReplyToCommand($"[ZM ADMIN] Forced {player.PlayerName} to human class: {state.SelectedHumanClass.Name}.");
+        player.PrintToCenterHtml($"<font color='#7fd7ff'>{state.SelectedHumanClass.Name}</font><br><font color='#ffffff'>Admin test mode</font>", 5);
     }
 
     private void StartBotRound(CommandInfo command)
@@ -403,6 +427,16 @@ public class AdminTestHandler
         }
     }
 
+    private void PrintHumanClassList(CommandInfo command)
+    {
+        command.ReplyToCommand("Available human classes:");
+        for (var i = 0; i < _config.HumanConfig.HumanClasses.Length; i++)
+        {
+            var human = _config.HumanConfig.HumanClasses[i];
+            command.ReplyToCommand($"{i + 1}. {human.Name} [{human.Id}]");
+        }
+    }
+
     private bool TryResolveZombie(string value, out Zombie zombie)
     {
         if (int.TryParse(value, out var index)
@@ -424,6 +458,30 @@ public class AdminTestHandler
         }
 
         zombie = null!;
+        return false;
+    }
+
+    private bool TryResolveHuman(string value, out HumanClass humanClass)
+    {
+        if (int.TryParse(value, out var index)
+            && index >= 1
+            && index <= _config.HumanConfig.HumanClasses.Length)
+        {
+            humanClass = _config.HumanConfig.HumanClasses[index - 1];
+            return true;
+        }
+
+        var normalized = Normalize(value);
+        foreach (var candidate in _config.HumanConfig.HumanClasses)
+        {
+            if (Normalize(candidate.Id) == normalized || Normalize(candidate.Name) == normalized)
+            {
+                humanClass = candidate;
+                return true;
+            }
+        }
+
+        humanClass = null!;
         return false;
     }
 

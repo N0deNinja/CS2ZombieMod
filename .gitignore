@@ -43,6 +43,10 @@ addons/counterstrikesharp/plugins/*
 /server/
 /steamcmd/
 
+# Local model preview exports
+/model-previews/exports/
+/model-previews/manifest.json
+
 # OS generated
 .DS_Store
 Thumbs.db

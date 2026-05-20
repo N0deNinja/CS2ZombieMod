@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zombie Pack Model Previewer</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.js",
+        "three/addons/loaders/GLTFLoader.js": "./vendor/GLTFLoader.js",
+        "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101114;
+      --panel: #181a1f;
+      --panel-2: #20232a;
+      --text: #f3f4f6;
+      --muted: #a7adb8;
+      --line: #343844;
+      --accent: #d73737;
+      --good: #f4c95d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(280px, 380px) 1fr;
+      height: 100dvh;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    aside {
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 16px;
+      overflow: auto;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .count {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .controls {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    input[type="search"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #101217;
+      color: var(--text);
+      font: inherit;
+      padding: 10px 12px;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      user-select: none;
+    }
+
+    .sidebar-actions {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .model-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      padding: 10px 12px;
+      text-align: left;
+      font: inherit;
+    }
+
+    button:hover,
+    button.active {
+      border-color: var(--accent);
+      background: #2a1f22;
+    }
+
+    button.interesting {
+      border-color: color-mix(in srgb, var(--good), var(--line) 45%);
+    }
+
+    button.has-note .model-name::after {
+      color: var(--good);
+      content: " note";
+      font-size: 11px;
+      font-weight: 700;
+      margin-left: 8px;
+      text-transform: uppercase;
+    }
+
+    .model-name {
+      display: block;
+      font-weight: 700;
+    }
+
+    .model-path {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      min-height: 0;
+      min-width: 0;
+      height: 100dvh;
+      overflow: hidden;
+      background: #0b0c0f;
+    }
+
+    .viewer-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: radial-gradient(circle at 50% 45%, #30343d 0, #111318 58%, #090a0d 100%);
+    }
+
+    #viewerCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .viewer-status {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      max-width: min(520px, calc(100% - 32px));
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(16, 17, 20, 0.78);
+      color: var(--muted);
+      padding: 8px 10px;
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    .details {
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+      padding: 12px 16px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      max-height: min(34dvh, 290px);
+      overflow: auto;
+    }
+
+    .details strong {
+      color: var(--text);
+    }
+
+    .detail-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .detail-actions button {
+      width: auto;
+      min-width: 150px;
+      text-align: center;
+    }
+
+    .notes {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .notes label {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 74px;
+      max-height: 140px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #101217;
+      color: var(--text);
+      font: inherit;
+      line-height: 1.4;
+      padding: 10px 12px;
+    }
+
+    .note-status {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 820px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(180px, 34dvh) 1fr;
+      }
+
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .stage {
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <aside>
+      <h1>Zombie Pack Models</h1>
+      <div class="count" id="count">Loading manifest...</div>
+      <div class="controls">
+        <input id="search" type="search" placeholder="Search model paths">
+        <label class="toggle">
+          <input id="showInteresting" type="checkbox">
+          Interesting only
+        </label>
+      </div>
+      <div class="sidebar-actions">
+        <button id="copyInteresting" type="button">Copy interesting list</button>
+        <button id="copyNotes" type="button">Copy notes list</button>
+      </div>
+      <div class="model-list" id="modelList"></div>
+    </aside>
+
+    <section class="stage">
+      <div class="viewer-wrap">
+        <canvas id="viewerCanvas"></canvas>
+        <div class="viewer-status" id="viewerStatus">Loading previewer...</div>
+      </div>
+      <div class="details">
+        <div><strong id="modelName">No model selected</strong></div>
+        <div id="modelPath">Select a model from the left.</div>
+        <div class="notes">
+          <label for="modelNote">Notes for this model</label>
+          <textarea id="modelNote" placeholder="Example: brute zombie, runner, human soldier, boss, too silly, maybe for VIP..."></textarea>
+          <div class="note-status" id="noteStatus"></div>
+        </div>
+        <div class="detail-actions">
+          <button id="markInteresting" type="button">Mark interesting</button>
+          <button id="copySelected" type="button">Copy selected path</button>
+          <label class="toggle">
+            <input id="shapeMode" type="checkbox">
+            Shape fallback
+          </label>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const list = document.querySelector("#modelList");
+    const count = document.querySelector("#count");
+    const search = document.querySelector("#search");
+    const showInteresting = document.querySelector("#showInteresting");
+    const copyInteresting = document.querySelector("#copyInteresting");
+    const copyNotes = document.querySelector("#copyNotes");
+    const canvas = document.querySelector("#viewerCanvas");
+    const viewerStatus = document.querySelector("#viewerStatus");
+    const modelName = document.querySelector("#modelName");
+    const modelPath = document.querySelector("#modelPath");
+    const modelNote = document.querySelector("#modelNote");
+    const noteStatus = document.querySelector("#noteStatus");
+    const markInteresting = document.querySelector("#markInteresting");
+    const copySelected = document.querySelector("#copySelected");
+    const shapeMode = document.querySelector("#shapeMode");
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+    camera.position.set(0, 1.5, 5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 1, 0);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x293047, 2.6));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 3.1);
+    keyLight.position.set(3, 5, 4);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0x8fb7ff, 1.4);
+    fillLight.position.set(-4, 2, -2);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xfff0d0, 1.2);
+    rimLight.position.set(0, 4, -5);
+    scene.add(rimLight);
+
+    const loader = new GLTFLoader();
+    const fallbackColors = [0xc9d6ff, 0xf2cf9b, 0xa6e3a1, 0xf0a8c1, 0xb7bdf8, 0xf5e0dc];
+    let currentRoot = null;
+    let loadToken = 0;
+
+    const interestingKey = "zombiePackInterestingModels";
+    const notesKey = "zombiePackModelNotes";
+    const interesting = new Set(JSON.parse(localStorage.getItem(interestingKey) || "[]"));
+    const notes = JSON.parse(localStorage.getItem(notesKey) || "{}");
+    let models = [];
+    let selectedModel = null;
+    let noteSaveTimer = 0;
+
+    function resizeViewer() {
+      const bounds = canvas.parentElement.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(bounds.width));
+      const height = Math.max(1, Math.floor(bounds.height));
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function disposeObject(object) {
+      object.traverse((child) => {
+        if (!child.isMesh) {
+          return;
+        }
+
+        child.geometry?.dispose();
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => {
+          if (!material) {
+            return;
+          }
+
+          for (const value of Object.values(material)) {
+            if (value?.isTexture) {
+              value.dispose();
+            }
+          }
+
+          material.dispose();
+        });
+      });
+    }
+
+    function fixTexture(texture) {
+      if (!texture) {
+        return null;
+      }
+
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.flipY = false;
+      return texture;
+    }
+
+    function makePreviewMaterial(source, index) {
+      if (shapeMode.checked) {
+        return new THREE.MeshStandardMaterial({
+          color: fallbackColors[index % fallbackColors.length],
+          roughness: 0.82,
+          metalness: 0,
+          side: THREE.DoubleSide
+        });
+      }
+
+      const material = source?.clone ? source.clone() : new THREE.MeshStandardMaterial();
+      material.side = THREE.DoubleSide;
+
+      if ("map" in material) {
+        material.map = fixTexture(material.map);
+      }
+
+      if ("emissiveMap" in material) {
+        material.emissiveMap = fixTexture(material.emissiveMap);
+      }
+
+      if ("aoMap" in material) {
+        material.aoMap = null;
+      }
+
+      if ("metalness" in material) {
+        material.metalness = 0;
+      }
+
+      if ("roughness" in material) {
+        material.roughness = Math.max(0.72, material.roughness ?? 0.85);
+      }
+
+      if ("color" in material && !material.map) {
+        const colorTooDark = material.color.r < 0.05 && material.color.g < 0.05 && material.color.b < 0.05;
+        if (colorTooDark) {
+          material.color.setHex(fallbackColors[index % fallbackColors.length]);
+        }
+      }
+
+      if ("opacity" in material && material.opacity < 0.08) {
+        material.opacity = 1;
+        material.transparent = false;
+      }
+
+      material.needsUpdate = true;
+      return material;
+    }
+
+    function prepareModel(root) {
+      let materialIndex = 0;
+
+      root.traverse((child) => {
+        if (!child.isMesh) {
+          return;
+        }
+
+        child.frustumCulled = false;
+        child.castShadow = false;
+        child.receiveShadow = false;
+
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map((material) => makePreviewMaterial(material, materialIndex++));
+        } else {
+          child.material = makePreviewMaterial(child.material, materialIndex++);
+        }
+      });
+    }
+
+    function frameModel(root) {
+      const box = new THREE.Box3().setFromObject(root);
+      if (box.isEmpty()) {
+        camera.position.set(0, 1.5, 5);
+        controls.target.set(0, 1, 0);
+        controls.update();
+        return;
+      }
+
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.1);
+      const fov = THREE.MathUtils.degToRad(camera.fov);
+      const distance = Math.abs(maxDim / Math.sin(fov / 2)) * 0.65;
+
+      controls.target.copy(center);
+      camera.near = Math.max(0.01, maxDim / 100);
+      camera.far = Math.max(1000, maxDim * 100);
+      camera.position.set(center.x, center.y + maxDim * 0.12, center.z + distance);
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+
+    function render() {
+      resizeViewer();
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(render);
+    }
+
+    function loadModel(model) {
+      const token = ++loadToken;
+      viewerStatus.hidden = false;
+      viewerStatus.textContent = "Loading model...";
+
+      loader.load(
+        `${model.src}?v=${Date.now()}`,
+        (gltf) => {
+          if (token !== loadToken) {
+            disposeObject(gltf.scene);
+            return;
+          }
+
+          if (currentRoot) {
+            scene.remove(currentRoot);
+            disposeObject(currentRoot);
+          }
+
+          currentRoot = gltf.scene;
+          prepareModel(currentRoot);
+          scene.add(currentRoot);
+          frameModel(currentRoot);
+          viewerStatus.hidden = true;
+        },
+        undefined,
+        (error) => {
+          if (token !== loadToken) {
+            return;
+          }
+
+          viewerStatus.hidden = false;
+          viewerStatus.textContent = `Could not load preview: ${error.message || error}`;
+        }
+      );
+    }
+
+    function getModelKey(model) {
+      return model.sourceModel || model.label || model.src;
+    }
+
+    function saveInteresting() {
+      localStorage.setItem(interestingKey, JSON.stringify([...interesting].sort()));
+    }
+
+    function saveNotes() {
+      localStorage.setItem(notesKey, JSON.stringify(notes));
+    }
+
+    function getNote(model) {
+      if (!model) {
+        return "";
+      }
+
+      return notes[getModelKey(model)] || "";
+    }
+
+    function setNote(model, value) {
+      if (!model) {
+        return;
+      }
+
+      const key = getModelKey(model);
+      const trimmed = value.trim();
+      if (trimmed) {
+        notes[key] = value;
+      } else {
+        delete notes[key];
+      }
+
+      saveNotes();
+    }
+
+    function formatModelForCopy(model) {
+      const path = model.sourceModel || model.label || model.src;
+      const note = getNote(model).trim();
+      return note ? `${path}\n  note: ${note}` : path;
+    }
+
+    function getInterestingModels() {
+      return models.filter((model) => interesting.has(getModelKey(model)));
+    }
+
+    function getNotedModels() {
+      return models.filter((model) => getNote(model).trim());
+    }
+
+    function setTemporaryText(button, text) {
+      const original = button.textContent;
+      button.textContent = text;
+      setTimeout(() => {
+        button.textContent = original;
+      }, 1100);
+    }
+
+    function updateCount(visibleCount) {
+      const noteCount = Object.values(notes).filter((value) => String(value).trim()).length;
+      count.textContent = `${visibleCount}/${models.length} models shown | ${interesting.size} interesting | ${noteCount} notes`;
+    }
+
+    function updateDetailActions() {
+      if (!selectedModel) {
+        markInteresting.textContent = "Mark interesting";
+        copySelected.disabled = true;
+        markInteresting.disabled = true;
+        modelNote.disabled = true;
+        modelNote.value = "";
+        noteStatus.textContent = "";
+        return;
+      }
+
+      const isMarked = interesting.has(getModelKey(selectedModel));
+      markInteresting.disabled = false;
+      copySelected.disabled = false;
+      modelNote.disabled = false;
+      markInteresting.textContent = isMarked ? "Unmark interesting" : "Mark interesting";
+      modelNote.value = getNote(selectedModel);
+      noteStatus.textContent = modelNote.value.trim() ? "Note saved" : "";
+    }
+
+    function selectModel(model, button) {
+      document.querySelectorAll("button.active").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      selectedModel = model;
+      loadModel(model);
+      modelName.textContent = model.name;
+      modelPath.textContent = model.sourceModel || model.label || model.src;
+      updateDetailActions();
+    }
+
+    function createModelButton(model) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "model-button";
+      if (interesting.has(getModelKey(model))) {
+        button.classList.add("interesting");
+      }
+      if (getNote(model).trim()) {
+        button.classList.add("has-note");
+      }
+
+      const title = document.createElement("span");
+      title.className = "model-name";
+      title.textContent = interesting.has(getModelKey(model)) ? `* ${model.name}` : model.name;
+
+      const path = document.createElement("span");
+      path.className = "model-path";
+      path.textContent = model.label || model.sourceModel || model.src;
+
+      button.append(title, path);
+      button.addEventListener("click", () => selectModel(model, button));
+      return button;
+    }
+
+    function renderList({ preserveSelection = true } = {}) {
+      const query = search.value.trim().toLowerCase();
+      const filtered = models.filter((model) => {
+        const haystack = [model.name, model.label, model.group, model.sourceModel, model.src]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        const matchesSearch = !query || haystack.includes(query);
+        const matchesInteresting = !showInteresting.checked || interesting.has(getModelKey(model));
+        return matchesSearch && matchesInteresting;
+      });
+
+      list.replaceChildren();
+      filtered.forEach((model) => {
+        const button = createModelButton(model);
+        list.appendChild(button);
+
+        if (preserveSelection && selectedModel && getModelKey(selectedModel) === getModelKey(model)) {
+          button.classList.add("active");
+        }
+      });
+
+      updateCount(filtered.length);
+
+      if (!filtered.length) {
+        const empty = document.createElement("div");
+        empty.className = "count";
+        empty.textContent = "No models match this filter.";
+        list.appendChild(empty);
+        return;
+      }
+
+      if (!preserveSelection || !selectedModel || !filtered.some((model) => getModelKey(model) === getModelKey(selectedModel))) {
+        selectModel(filtered[0], list.querySelector("button"));
+      }
+    }
+
+    fetch("manifest.json")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Manifest failed: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((loadedModels) => {
+        models = loadedModels;
+        renderList({ preserveSelection: false });
+      })
+      .catch((error) => {
+        count.textContent = error.message;
+      });
+
+    search.addEventListener("input", () => renderList());
+    showInteresting.addEventListener("change", () => renderList());
+    shapeMode.addEventListener("change", () => {
+      if (selectedModel) {
+        loadModel(selectedModel);
+      }
+    });
+
+    markInteresting.addEventListener("click", () => {
+      if (!selectedModel) {
+        return;
+      }
+
+      const key = getModelKey(selectedModel);
+      if (interesting.has(key)) {
+        interesting.delete(key);
+      } else {
+        interesting.add(key);
+      }
+
+      saveInteresting();
+      updateDetailActions();
+      renderList();
+    });
+
+    modelNote.addEventListener("input", () => {
+      if (!selectedModel) {
+        return;
+      }
+
+      noteStatus.textContent = "Saving...";
+      window.clearTimeout(noteSaveTimer);
+      noteSaveTimer = window.setTimeout(() => {
+        setNote(selectedModel, modelNote.value);
+        noteStatus.textContent = modelNote.value.trim() ? "Note saved" : "";
+        renderList();
+      }, 180);
+    });
+
+    copySelected.addEventListener("click", async () => {
+      if (!selectedModel) {
+        return;
+      }
+
+      await navigator.clipboard.writeText(formatModelForCopy(selectedModel));
+      setTemporaryText(copySelected, "Copied");
+    });
+
+    copyInteresting.addEventListener("click", async () => {
+      const selected = getInterestingModels();
+      const text = selected.map(formatModelForCopy).join("\n\n");
+      await navigator.clipboard.writeText(text);
+      setTemporaryText(copyInteresting, selected.length ? "Copied list" : "Nothing marked");
+    });
+
+    copyNotes.addEventListener("click", async () => {
+      const selected = getNotedModels();
+      const text = selected.map(formatModelForCopy).join("\n\n");
+      await navigator.clipboard.writeText(text);
+      setTemporaryText(copyNotes, selected.length ? "Copied notes" : "No notes yet");
+    });
+
+    window.addEventListener("resize", resizeViewer);
+    render();
+  </script>
+</body>
+</html>

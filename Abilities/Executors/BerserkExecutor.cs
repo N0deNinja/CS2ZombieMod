@@ -4,8 +4,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class BerserkExecutor : Ability
 {
-    private const float speedMultiplier = 1.5f;
-
     public BerserkExecutor()
         : base(
             id: "berserk",
@@ -24,10 +22,12 @@ public class BerserkExecutor : Ability
         if (playerPawn == null) return;
 
         var state = context.PlayerState;
+        var config = context.Config.AbilityConfig.Berserk;
+        var speedMultiplier = Math.Clamp(config.SpeedMultiplier, 0.1f, 4.0f);
 
-        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, Duration, state);
-        AbilityUtils.ApplySpeedBoost(player, speedMultiplier, Duration);
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, config.DurationSeconds, state);
+        AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
 
-        context.PlayerState.SetCooldown(AbilityType.Berserk, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.Berserk, config.CooldownSeconds);
     }
 }

@@ -113,6 +113,7 @@ public class AbilityHandler
             Plugin = _plugin,
             Config = _config,
             ServerTime = DateTime.Now,
+            PlayerStates = _playerStates,
             AllPlayers = Utilities.GetPlayers()
                 .Where(p => p.IsValid)
                 .ToList()
@@ -165,13 +166,14 @@ public class AbilityHandler
             return;
         }
 
-        if (progression.XP < ability.UnlockCost)
+        var unlockCost = _config.AbilityConfig.GetSettings(type).UnlockCost;
+        if (progression.XP < unlockCost)
         {
             command.ReplyToCommand(_config.MessagesConfig.NotEnoughExp);
             return;
         }
 
-        progression.XP -= ability.UnlockCost;
+        progression.XP -= unlockCost;
         progression.UnlockedAbilities.Add(type);
 
         command.ReplyToCommand(string.Format(_config.MessagesConfig.AbilityUnlocked, ability.Name));
@@ -203,7 +205,7 @@ public class AbilityHandler
             var ability = AbilityRegistry.Get(type);
             var label = ability == null
                 ? $"{GetAbilityDisplayName(type)} (not implemented)"
-                : $"{ability.Name} [{ability.Id}] - Cost: {ability.UnlockCost} XP";
+                : $"{ability.Name} [{ability.Id}] - Cost: {_config.AbilityConfig.GetSettings(type).UnlockCost} XP";
 
             command.ReplyToCommand($"Unlockable: {label}");
         }

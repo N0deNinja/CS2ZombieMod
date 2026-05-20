@@ -5,7 +5,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class InvisibilityExecutor : Ability
 {
-    private const int TransparentAlpha = 60;
     private const int NormalAlpha = 255;
 
     public InvisibilityExecutor()
@@ -25,14 +24,17 @@ public class InvisibilityExecutor : Ability
         var pawn = player.PlayerPawn.Value;
         if (pawn == null) return;
 
+        var config = context.Config.AbilityConfig.Invisibility;
+        var alpha = Math.Clamp(config.Alpha, 0, 255);
+
         AbilityUtils.RunTimedEffect(
             player,
-            Duration,
-            apply: p => p.Render = Color.FromArgb(TransparentAlpha, 255, 255, 255),
+            config.DurationSeconds,
+            apply: p => p.Render = Color.FromArgb(alpha, 255, 255, 255),
             revert: p => p.Render = Color.FromArgb(NormalAlpha, 255, 255, 255)
         );
 
-        context.PlayerState.SetCooldown(AbilityType.Invisibility, Cooldown);
-        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Invisibility, Duration, context.PlayerState);
+        context.PlayerState.SetCooldown(AbilityType.Invisibility, config.CooldownSeconds);
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Invisibility, config.DurationSeconds, context.PlayerState);
     }
 }

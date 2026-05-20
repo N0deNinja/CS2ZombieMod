@@ -11,6 +11,10 @@ public class Zombie
 
     public float Gravity { get; set; }
 
+    public string PlayerModel { get; set; } = "";
+    public int? InfectionHitsRequired { get; set; }
+    public float? KnifeDamage { get; set; }
+
     public required AbilityType[] DefaultAbilities { get; set; }
     public required AbilityType[] UnlockableAbilities { get; set; }
 

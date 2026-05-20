@@ -1,4 +1,5 @@
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Extensions;
@@ -30,6 +31,25 @@ public static class PlayerExtensions
 
         var userId = Convert.ToUInt64(player.UserId);
         return BotStateKeyPrefix | userId;
+    }
+
+    public static void ForceTeamState(this CCSPlayerController player, CsTeam team)
+    {
+        if (!player.IsValid)
+            return;
+
+        var teamNum = (byte)team;
+        player.TeamNum = teamNum;
+        player.InitialTeamNum = (int)team;
+        player.MarkTeamStateChanged();
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        pawn.TeamNum = teamNum;
+        pawn.InitialTeamNum = (int)team;
+        pawn.MarkTeamStateChanged();
     }
 
     public static List<CCSPlayerController> GetPlayersInProximity(

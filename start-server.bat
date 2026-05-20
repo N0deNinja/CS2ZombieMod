@@ -86,7 +86,7 @@ echo [start] Connect from CS2 console with: connect 127.0.0.1:%PORT%
 echo.
 
 pushd "%GAME_BIN_DIR%"
-"%CS2_EXE%" -dedicated -console -usercon -insecure -condebug -port %PORT% %LAN_ARGS% %TOKEN_ARGS% +game_type 0 +game_mode 0 +exec zombiemod_server.cfg +mp_do_warmup_period 0 +mp_warmuptime 0 +mp_warmup_end +mp_freezetime 0 +mp_round_restart_delay 0 +mp_roundtime 5.25 +mp_roundtime_defuse 5.25 +mp_roundtime_hostage 5.25 +mp_ignore_round_win_conditions 1 +mp_timelimit 0 +mp_teammates_are_enemies 0 +mp_friendlyfire 0 +bot_quota 0 +bot_kick +bot_stop 0 +bot_dont_shoot 0 +mp_autoteambalance 0 +mp_limitteams 0 +mp_randomspawn 1 +mp_randomspawn_los 0 +map %MAP%
+"%CS2_EXE%" -dedicated -console -usercon -insecure -condebug -port %PORT% %LAN_ARGS% %TOKEN_ARGS% +game_type 0 +game_mode 0 +exec zombiemod_server.cfg +mp_do_warmup_period 0 +mp_warmuptime 0 +mp_warmup_end +mp_freezetime 0 +mp_round_restart_delay 0 +mp_roundtime 5.25 +mp_roundtime_defuse 5.25 +mp_roundtime_hostage 5.25 +mp_ignore_round_win_conditions 1 +mp_timelimit 0 +mp_teammates_are_enemies 0 +mp_friendlyfire 0 +mp_autoteambalance 0 +mp_limitteams 0 +mp_solid_teammates 0 +mp_buytime 0 +mp_buy_anywhere 0 +mp_t_default_primary "" +mp_t_default_secondary "" +mp_t_default_melee weapon_knife +mp_ct_default_primary "" +mp_ct_default_secondary weapon_usp_silencer +mp_ct_default_melee weapon_knife +mp_death_drop_gun 0 +mp_death_drop_grenade 0 +mp_death_drop_defuser 0 +bot_quota 0 +bot_kick +bot_stop 0 +bot_dont_shoot 0 +mp_randomspawn 1 +mp_randomspawn_los 0 +map %MAP%
 set "EXIT_CODE=%ERRORLEVEL%"
 popd
 

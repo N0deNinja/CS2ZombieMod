@@ -9,7 +9,9 @@ namespace ZombieModPlugin.Abilities
             { AbilityType.HealthRegen, new Executors.HealthRegenExecutor() },
             { AbilityType.SpeedBoost, new Executors.SpeedBoostExecutor() },
             { AbilityType.Invisibility, new Executors.InvisibilityExecutor() },
-            { AbilityType.SelfDestruct, new Executors.SelfDestructExecutor() }
+            { AbilityType.SelfDestruct, new Executors.SelfDestructExecutor() },
+            { AbilityType.FrostBolt, new Executors.FrostBoltExecutor() },
+            { AbilityType.CultistHex, new Executors.CultistHexExecutor() }
         };
 
         public static Ability? Get(AbilityType type) =>

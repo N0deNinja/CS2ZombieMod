@@ -79,6 +79,8 @@ without the `css_` prefix.
 bind mouse4 "css_zability pounce"
 bind mouse5 "css_zability speed_boost"
 bind v "css_zability invisibility"
+bind c "css_zability frost_bolt"
+bind z "css_zability cultist_hex"
 bind x "css_zability_slot 1"
 ```
 
@@ -95,11 +97,16 @@ admin permissions to be required.
 
 ```text
 css_zadmin
-css_zclass brute
+css_zclass classic
+css_zclass molong
 css_zclass runner
-css_zclass stalker
-css_zclass medic
+css_zclass brute
+css_zclass cultist
+css_zclass frozen
+css_zclass lurker
 css_zhuman
+css_zhuman hunter
+css_hclass vip_heavy
 css_zbots round
 css_zbots add 3 ct
 css_zbots kick

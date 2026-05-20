@@ -6,6 +6,7 @@ using ZombieModPlugin.States;
 using ZombieModPlugin.Extensions;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Drawing;
+using ZombieModPlugin.Zombies.Models;
 
 namespace ZombieModPlugin.Zombies.Handlers;
 
@@ -20,12 +21,13 @@ public class ZombieHandler
 
     public void OnBecomeZombie(CCSPlayerController player, PlayerState playerState)
     {
-        var zombie = playerState.SelectedZombieType ?? _config.ZombieConfig.ZombieTypes.FirstOrDefault();
+        var zombie = playerState.SelectedZombieType ?? GetDefaultZombieClass();
         if (zombie == null)
             return;
 
         playerState.SelectedZombieType = zombie;
-        playerState.InfectionHitsTaken = 0;
+        playerState.SelectedHumanClass = null;
+        playerState.ResetRoleRuntimeState();
 
         player.PrintToChat($"{_config.ChatConfig.ZombiePrefix} You are now a {zombie.Name}!");
         Console.WriteLine($"[ZombieMod] {player.PlayerName} transformed into a zombie ({zombie.Name}).");
@@ -35,47 +37,101 @@ public class ZombieHandler
             if (!player.IsValid)
                 return;
 
-            MoveToZombieTeam(player);
+            player.SwitchTeam(CsTeam.Terrorist);
+            player.ForceTeamState(CsTeam.Terrorist);
 
             Server.NextFrame(() =>
             {
                 if (!player.IsValid)
                     return;
 
-                if (player.IsBot || !player.PawnIsAlive)
+                player.ForceTeamState(CsTeam.Terrorist);
+
+                if (!player.PawnIsAlive)
                     player.Respawn();
 
-                Server.NextFrame(() =>
-                {
-                    if (!player.IsValid)
-                        return;
-
-                    player.RemoveWeapons();
-                    player.GiveNamedItem("weapon_knife");
-
-                    var pawn = player.PlayerPawn.Value;
-                    if (pawn == null || !pawn.IsValid)
-                        return;
-
-                    pawn.Render = Color.FromArgb(255, 255, 255, 255);
-                    pawn.MaxHealth = zombie.Health;
-                    pawn.Health = zombie.Health;
-                    pawn.VelocityModifier = zombie.SpeedModifier;
-                    pawn.GravityScale = zombie.Gravity;
-                    pawn.MarkPlayerStatsStateChanged();
-                });
+                ScheduleZombieLoadout(player, zombie);
             });
         });
     }
 
-    private static void MoveToZombieTeam(CCSPlayerController player)
+    private void ScheduleZombieLoadout(CCSPlayerController player, Zombie zombie)
     {
-        if (player.Team == CsTeam.Terrorist)
+        var model = GetZombieModel(zombie);
+        Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250);
+            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
+
+            await Task.Delay(500);
+            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: false));
+        });
+    }
+
+    public void EnforceZombieEquipment(CCSPlayerController player, PlayerState playerState)
+    {
+        var zombie = playerState.SelectedZombieType ?? GetDefaultZombieClass();
+        if (zombie == null)
             return;
 
-        if (player.IsBot)
-            player.ChangeTeam(CsTeam.Terrorist);
-        else
+        ApplyZombieLoadout(player, zombie, GetZombieModel(zombie), resetHealth: false, resetWeapons: true);
+    }
+
+    private string GetZombieModel(Zombie zombie)
+    {
+        return !string.IsNullOrWhiteSpace(zombie.PlayerModel)
+            ? zombie.PlayerModel
+            : _config.ZombieConfig.PlayerModel;
+    }
+
+    private Zombie? GetDefaultZombieClass()
+    {
+        return _config.ZombieConfig.ZombieTypes.FirstOrDefault(zombie =>
+                string.Equals(zombie.Id, _config.ZombieConfig.DefaultZombieClassId, StringComparison.OrdinalIgnoreCase))
+            ?? _config.ZombieConfig.ZombieTypes.FirstOrDefault();
+    }
+
+    private static void ApplyZombieLoadout(CCSPlayerController player, Zombie zombie, string model, bool resetHealth, bool resetWeapons)
+    {
+        if (!player.IsValid)
+            return;
+
+        if (player.Team != CsTeam.Terrorist)
             player.SwitchTeam(CsTeam.Terrorist);
+
+        player.ForceTeamState(CsTeam.Terrorist);
+
+        if (!player.PawnIsAlive)
+        {
+            player.Respawn();
+            return;
+        }
+
+        if (resetWeapons)
+        {
+            player.RemoveWeapons();
+            player.GiveNamedItem("weapon_knife");
+        }
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        if (pawn.WeaponServices != null)
+            pawn.WeaponServices.PreventWeaponPickup = true;
+
+        if (!string.IsNullOrWhiteSpace(model))
+            pawn.SetModel(model);
+
+        pawn.Render = Color.FromArgb(255, 255, 255, 255);
+        pawn.MaxHealth = zombie.Health;
+        pawn.Health = resetHealth
+            ? zombie.Health
+            : Math.Clamp(pawn.Health, 1, zombie.Health);
+        pawn.VelocityModifier = zombie.SpeedModifier;
+        pawn.GravityScale = zombie.Gravity;
+        pawn.MarkPlayerStatsStateChanged();
     }
 }

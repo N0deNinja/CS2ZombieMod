@@ -4,8 +4,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class SpeedBoostExecutor : Ability
 {
-    private const float speedMultiplier = 1.5f;
-
     public SpeedBoostExecutor()
         : base(
             id: "speed_boost",
@@ -23,10 +21,12 @@ public class SpeedBoostExecutor : Ability
         var playerPawn = player.PlayerPawn.Value;
         if (playerPawn == null) return;
 
-        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.SpeedBoost, Duration, context.PlayerState);
-        context.PlayerState.SetCooldown(AbilityType.SpeedBoost, Cooldown);
+        var config = context.Config.AbilityConfig.SpeedBoost;
+        var speedMultiplier = Math.Clamp(config.SpeedMultiplier, 0.1f, 4.0f);
 
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.SpeedBoost, config.DurationSeconds, context.PlayerState);
+        context.PlayerState.SetCooldown(AbilityType.SpeedBoost, config.CooldownSeconds);
 
-        AbilityUtils.ApplySpeedBoost(player, speedMultiplier, Duration);
+        AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
     }
 }

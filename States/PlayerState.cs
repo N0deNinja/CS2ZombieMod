@@ -1,5 +1,6 @@
 using ZombieModPlugin.Zombies.Models;
 using ZombieModPlugin.Abilities;
+using ZombieModPlugin.Humans.Models;
 
 namespace ZombieModPlugin.States;
 
@@ -16,7 +17,7 @@ public class PlayerState
                 return;
 
             _isZombie = value;
-            InfectionHitsTaken = 0;
+            ResetRoleRuntimeState();
             OnZombieStateChanged?.Invoke(this, value);
         }
     }
@@ -25,7 +26,17 @@ public class PlayerState
     public event Action<PlayerState, bool>? OnZombieStateChanged;
 
     public Zombie? SelectedZombieType { get; set; }
+    public HumanClass? SelectedHumanClass { get; set; }
     public int InfectionHitsTaken { get; set; }
+    public float ZombieKnockbackMultiplier { get; set; } = 1.0f;
+    public DateTime KnockbackMultiplierExpiresAtUtc { get; set; } = DateTime.MinValue;
+    public int AirJumpsUsed { get; set; }
+    public float? LastCloakX { get; set; }
+    public float? LastCloakY { get; set; }
+    public float? LastCloakZ { get; set; }
+    public DateTime? LurkerStationarySinceUtc { get; set; }
+    public DateTime LastLurkerCloakCheckUtc { get; set; } = DateTime.MinValue;
+    public bool IsLurkerCloaked { get; set; }
 
     public Dictionary<string, ZombieProgression> ZombieProgression { get; set; } = new();
     public Dictionary<AbilityType, DateTime> GlobalCooldowns { get; set; } = [];
@@ -53,6 +64,25 @@ public class PlayerState
         {
             GlobalCooldowns.Remove(type);
         });
+    }
+
+    public void ResetRoleRuntimeState()
+    {
+        InfectionHitsTaken = 0;
+        ZombieKnockbackMultiplier = 1.0f;
+        KnockbackMultiplierExpiresAtUtc = DateTime.MinValue;
+        AirJumpsUsed = 0;
+        ResetLurkerCloakTracking();
+    }
+
+    public void ResetLurkerCloakTracking()
+    {
+        LastCloakX = null;
+        LastCloakY = null;
+        LastCloakZ = null;
+        LurkerStationarySinceUtc = null;
+        LastLurkerCloakCheckUtc = DateTime.MinValue;
+        IsLurkerCloaked = false;
     }
 }
 

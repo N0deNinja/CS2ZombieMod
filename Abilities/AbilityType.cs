@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace ZombieModPlugin.Abilities;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AbilityType
 {
     Pounce,               // Jump forward rapidly (leap attack)
@@ -18,4 +21,8 @@ public enum AbilityType
     EMPPulse,             // Disables enemy HUD/crosshair (simulate with overlays)
     VenomBite,            // Poison effect over time (DOT)
     ShadowStep,           // Short teleport forward (based on aim direction)
+    FrostBolt,            // Chills the aimed human and slows movement
+    CultistHex,           // Weakens nearby humans for a short duration
+    MultiJump,            // Passive extra air jumps
+    LurkerCloak,          // Passive camouflage while standing still
 }

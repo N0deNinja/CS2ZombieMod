@@ -40,7 +40,7 @@ public class AbilityManager
             Console.WriteLine($"{type} - Is on cooldown");
             player.PrintToChat(string.Format(
                 config.MessagesConfig.AbilityOnCooldown,
-                type.ToString(),
+                AbilityRegistry.Get(type)?.Name ?? type.ToString(),
                 Math.Ceiling(remaining)
             ));
             return;

@@ -5,8 +5,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class PounceExecutor : Ability
 {
-    private const float pounceForceMultiplier = 700f;
-
     public PounceExecutor()
         : base(
             id: "pounce",
@@ -25,13 +23,14 @@ public class PounceExecutor : Ability
         if (playerPawn == null) return;
 
         var state = context.PlayerState;
+        var config = context.Config.AbilityConfig.Pounce;
         var forward = playerPawn.EyeAngles.ToForwardVector();
-        var pounceForce = forward * pounceForceMultiplier;
-        pounceForce.Z += 300f;
+        var pounceForce = forward * Math.Clamp(config.Force, 0f, 2000f);
+        pounceForce.Z += Math.Clamp(config.UpForce, 0f, 1000f);
 
         playerPawn.Teleport(velocity: pounceForce);
 
-        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Pounce, Duration, state);
-        context.PlayerState.SetCooldown(AbilityType.Pounce, Cooldown);
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Pounce, config.DurationSeconds, state);
+        context.PlayerState.SetCooldown(AbilityType.Pounce, config.CooldownSeconds);
     }
 }

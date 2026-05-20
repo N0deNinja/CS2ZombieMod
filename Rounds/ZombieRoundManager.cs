@@ -1,8 +1,11 @@
 using System.Globalization;
+using System.Drawing;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Events;
+using CounterStrikeSharp.API.Modules.Utils;
+using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Humans.Handlers;
@@ -113,8 +116,18 @@ public class ZombieRoundManager
         Server.ExecuteCommand("mp_friendlyfire 0");
         Server.ExecuteCommand("mp_autoteambalance 0");
         Server.ExecuteCommand("mp_limitteams 0");
+        Server.ExecuteCommand("mp_solid_teammates 0");
         Server.ExecuteCommand("mp_buytime 0");
         Server.ExecuteCommand("mp_buy_anywhere 0");
+        Server.ExecuteCommand("mp_t_default_primary \"\"");
+        Server.ExecuteCommand("mp_t_default_secondary \"\"");
+        Server.ExecuteCommand("mp_t_default_melee weapon_knife");
+        Server.ExecuteCommand("mp_ct_default_primary \"\"");
+        Server.ExecuteCommand("mp_ct_default_secondary weapon_usp_silencer");
+        Server.ExecuteCommand("mp_ct_default_melee weapon_knife");
+        Server.ExecuteCommand("mp_death_drop_gun 0");
+        Server.ExecuteCommand("mp_death_drop_grenade 0");
+        Server.ExecuteCommand("mp_death_drop_defuser 0");
         Server.ExecuteCommand("mp_randomspawn 1");
         Server.ExecuteCommand("mp_randomspawn_los 0");
         Server.ExecuteCommand("bot_stop 0");
@@ -161,9 +174,12 @@ public class ZombieRoundManager
                 var kind = player.IsBot ? "bot" : "player";
                 var side = state.IsZombie ? "Z" : "H";
                 var team = player.Team.ToString();
+                var pawnTeam = player.PlayerPawn.Value is { IsValid: true } pawn
+                    ? ((CsTeam)pawn.TeamNum).ToString()
+                    : "no-pawn";
                 var aliveState = player.PawnIsAlive ? "alive" : "dead";
 
-                return $"{player.PlayerName}({kind},{side},{team},{aliveState})";
+                return $"{player.PlayerName}({kind},{side},ctrl:{team},pawn:{pawnTeam},{aliveState})";
             });
 
         return $"Phase: {_phase} | Players: {connected} alive: {alive} | Humans: {humans} | Zombies: {zombies} | Bots: {bots} | BotsInRound: {ShouldIncludeBots()} | {string.Join("; ", players)}";
@@ -214,10 +230,19 @@ public class ZombieRoundManager
         var victimState = victim.GetState(_playerStates);
         var attackerState = attacker.GetState(_playerStates);
 
+        if (AreSameFaction(victim, attacker, victimState, attackerState))
+            return HookResult.Handled;
+
+        if (!attackerState.IsZombie && victimState.IsZombie)
+        {
+            ApplyZombieKnockback(victimPawn, attacker, attackerState);
+            return HookResult.Continue;
+        }
+
         if (!attackerState.IsZombie || victimState.IsZombie)
             return HookResult.Continue;
 
-        var requiredHits = GetRequiredInfectionHits();
+        var requiredHits = GetRequiredInfectionHits(victimState);
         victimState.InfectionHitsTaken = Math.Min(requiredHits, victimState.InfectionHitsTaken + 1);
 
         ShowInfectionProgress(victim, attacker, victimState.InfectionHitsTaken, requiredHits);
@@ -233,20 +258,94 @@ public class ZombieRoundManager
         return HookResult.Handled;
     }
 
+    public HookResult OnItemPickup(EventItemPickup @event, GameEventInfo gameEventInfo)
+    {
+        var player = @event.Userid;
+        if (player == null || !IsPlayablePlayer(player))
+            return HookResult.Continue;
+
+        var state = player.GetState(_playerStates);
+        if (!state.IsZombie)
+            return HookResult.Continue;
+
+        if (IsKnifePickup(@event))
+            return HookResult.Continue;
+
+        Server.NextFrame(() => EnforcePlayerRole(player));
+        return HookResult.Handled;
+    }
+
     public HookResult OnPlayerSpawned(EventPlayerSpawned @event, GameEventInfo gameEventInfo)
     {
-        if (!_config.GeneralConfig.RandomizePlayerSpawns)
-            return HookResult.Continue;
-
-        if (_phase is not (RoundPhase.Preparing or RoundPhase.InfectionCountdown))
-            return HookResult.Continue;
-
         var player = @event.Userid;
         if (!IsPlayablePlayer(player) || player == null)
             return HookResult.Continue;
 
-        Server.NextFrame(() => ScatterPlayerToRandomMapSpawn(player));
+        Server.NextFrame(() => EnforcePlayerRole(player));
+
+        if (_config.GeneralConfig.RandomizePlayerSpawns
+            && _phase is RoundPhase.Preparing or RoundPhase.InfectionCountdown)
+        {
+            Server.NextFrame(() => ScatterPlayerToRandomMapSpawn(player));
+        }
+
         return HookResult.Continue;
+    }
+
+    public void OnTick()
+    {
+        var now = DateTime.UtcNow;
+
+        foreach (var player in GetConnectedPlayers())
+        {
+            if (!player.PawnIsAlive)
+                continue;
+
+            var state = player.GetState(_playerStates);
+            ResetAirJumpsIfGrounded(player, state);
+
+            if (_phase is RoundPhase.Active or RoundPhase.Testing)
+                UpdateLurkerCloak(player, state, now);
+        }
+    }
+
+    public void OnPlayerButtonsChanged(CCSPlayerController player, PlayerButtons pressed, PlayerButtons released)
+    {
+        if (!IsPlayablePlayer(player) || !player.PawnIsAlive || !pressed.HasFlag(PlayerButtons.Jump))
+            return;
+
+        var state = player.GetState(_playerStates);
+        if (!HasClassAbility(state, AbilityType.MultiJump))
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        if (IsOnGround(pawn))
+        {
+            state.AirJumpsUsed = 0;
+            return;
+        }
+
+        var config = _config.AbilityConfig.MultiJump;
+        var allowedAirJumps = Math.Max(0, state.IsZombie
+            ? config.ZombieAdditionalJumps
+            : config.HumanAdditionalJumps);
+
+        if (state.AirJumpsUsed >= allowedAirJumps)
+            return;
+
+        state.AirJumpsUsed++;
+
+        var forward = pawn.EyeAngles.ToForwardVector();
+        var currentVelocity = pawn.AbsVelocity;
+        var velocity = new Vector(
+            currentVelocity.X + forward.X * Math.Clamp(config.ForwardForce, 0.0f, 800.0f),
+            currentVelocity.Y + forward.Y * Math.Clamp(config.ForwardForce, 0.0f, 800.0f),
+            Math.Clamp(config.UpForce, 120.0f, 1000.0f));
+
+        pawn.Teleport(velocity: velocity);
     }
 
     private void StartRoundLifecycle()
@@ -426,7 +525,8 @@ public class ZombieRoundManager
             var state = player.GetState(_playerStates);
             state.IsZombie = false;
             state.SelectedZombieType = null;
-            state.InfectionHitsTaken = 0;
+            state.SelectedHumanClass = null;
+            state.ResetRoleRuntimeState();
             state.GlobalCooldowns.Clear();
             state.ActiveAbilities.Clear();
 
@@ -442,7 +542,8 @@ public class ZombieRoundManager
             var state = player.GetState(_playerStates);
             state.IsZombie = false;
             state.SelectedZombieType = null;
-            state.InfectionHitsTaken = 0;
+            state.SelectedHumanClass = null;
+            state.ResetRoleRuntimeState();
             state.GlobalCooldowns.Clear();
             state.ActiveAbilities.Clear();
         }
@@ -454,7 +555,8 @@ public class ZombieRoundManager
         {
             state.IsZombie = false;
             state.SelectedZombieType = null;
-            state.InfectionHitsTaken = 0;
+            state.SelectedHumanClass = null;
+            state.ResetRoleRuntimeState();
             state.GlobalCooldowns.Clear();
             state.ActiveAbilities.Clear();
         }
@@ -540,6 +642,7 @@ public class ZombieRoundManager
         state.InfectionHitsTaken = 0;
         state.IsZombie = true;
         _zombieHandler.OnBecomeZombie(player, state);
+        ResetBotAiAfterTeamChange(player, infector);
 
         if (isInitialInfection)
         {
@@ -591,9 +694,15 @@ public class ZombieRoundManager
         return Math.Max(1, _config.ZombieConfig.XPPerLevel * Math.Max(1, currentLevel));
     }
 
-    private int GetRequiredInfectionHits()
+    private int GetRequiredInfectionHits(PlayerState victimState)
     {
-        return Math.Max(1, _config.ZombieConfig.InfectionHitsRequired);
+        var classOverride = victimState.SelectedHumanClass?.InfectionHitsRequired;
+        if (classOverride.HasValue)
+            return Math.Max(1, classOverride.Value);
+
+        return Math.Max(1, _config.HumanConfig.InfectionHitsRequired > 0
+            ? _config.HumanConfig.InfectionHitsRequired
+            : _config.ZombieConfig.InfectionHitsRequired);
     }
 
     private string GetNativeRoundTimeMinutes()
@@ -613,6 +722,216 @@ public class ZombieRoundManager
         var message = $"Infection: {hits}/{requiredHits}";
         victim.PrintToCenter(message);
         attacker.PrintToCenter($"{victim.PlayerName} {message}");
+    }
+
+    private void EnforcePlayerRole(CCSPlayerController player)
+    {
+        if (!IsPlayablePlayer(player))
+            return;
+
+        var state = player.GetState(_playerStates);
+        if (state.IsZombie)
+            _zombieHandler.EnforceZombieEquipment(player, state);
+        else
+            _humanHandler.EnforceHumanAppearance(player, state);
+    }
+
+    private void ResetAirJumpsIfGrounded(CCSPlayerController player, PlayerState state)
+    {
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        if (IsOnGround(pawn))
+            state.AirJumpsUsed = 0;
+    }
+
+    private void UpdateLurkerCloak(CCSPlayerController player, PlayerState state, DateTime now)
+    {
+        if (!state.IsZombie || !HasClassAbility(state, AbilityType.LurkerCloak))
+        {
+            RevealLurkerIfNeeded(player, state);
+            return;
+        }
+
+        var config = _config.AbilityConfig.LurkerCloak;
+        if ((now - state.LastLurkerCloakCheckUtc).TotalSeconds < Math.Max(0.05f, config.TickIntervalSeconds))
+            return;
+
+        state.LastLurkerCloakCheckUtc = now;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid || pawn.AbsOrigin == null)
+            return;
+
+        var origin = pawn.AbsOrigin;
+        if (!state.LastCloakX.HasValue || !state.LastCloakY.HasValue || !state.LastCloakZ.HasValue)
+        {
+            state.LastCloakX = origin.X;
+            state.LastCloakY = origin.Y;
+            state.LastCloakZ = origin.Z;
+            state.LurkerStationarySinceUtc = now;
+            return;
+        }
+
+        var dx = origin.X - state.LastCloakX.Value;
+        var dy = origin.Y - state.LastCloakY.Value;
+        var dz = origin.Z - state.LastCloakZ.Value;
+        var movedDistance = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+        var speed2d = MathF.Sqrt(pawn.AbsVelocity.X * pawn.AbsVelocity.X + pawn.AbsVelocity.Y * pawn.AbsVelocity.Y);
+        var movementThreshold = Math.Max(0.1f, config.MovementThreshold);
+
+        state.LastCloakX = origin.X;
+        state.LastCloakY = origin.Y;
+        state.LastCloakZ = origin.Z;
+
+        if (movedDistance > movementThreshold || speed2d > movementThreshold)
+        {
+            state.LurkerStationarySinceUtc = now;
+            RevealLurkerIfNeeded(player, state);
+            return;
+        }
+
+        state.LurkerStationarySinceUtc ??= now;
+        if ((now - state.LurkerStationarySinceUtc.Value).TotalSeconds < Math.Max(0.0f, config.StationaryDelaySeconds))
+            return;
+
+        if (state.IsLurkerCloaked)
+            return;
+
+        pawn.Render = Color.FromArgb(Math.Clamp(config.Alpha, 0, 255), 255, 255, 255);
+        pawn.MarkRenderStateChanged();
+        state.IsLurkerCloaked = true;
+    }
+
+    private static void RevealLurkerIfNeeded(CCSPlayerController player, PlayerState state)
+    {
+        if (!state.IsLurkerCloaked)
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn != null && pawn.IsValid)
+        {
+            pawn.Render = Color.FromArgb(255, 255, 255, 255);
+            pawn.MarkRenderStateChanged();
+        }
+
+        state.ResetLurkerCloakTracking();
+    }
+
+    private bool HasClassAbility(PlayerState state, AbilityType type)
+    {
+        if (state.IsZombie)
+        {
+            var zombie = state.SelectedZombieType;
+            if (zombie == null)
+                return false;
+
+            if (zombie.DefaultAbilities.Contains(type))
+                return true;
+
+            return state.ZombieProgression.TryGetValue(zombie.Id, out var progression)
+                && (progression.UnlockedAbilities.Contains(type) || progression.ActiveAbilities.Contains(type));
+        }
+
+        return state.SelectedHumanClass?.DefaultAbilities.Contains(type) == true;
+    }
+
+    private static bool IsOnGround(CCSPlayerPawn pawn)
+    {
+        const uint onGroundFlag = 1u;
+        return pawn.OnGroundLastTick
+            || (pawn.Flags & onGroundFlag) == onGroundFlag
+            || pawn.GroundEntity.Value != null;
+    }
+
+    private void ResetBotAiAfterTeamChange(CCSPlayerController player, CCSPlayerController? infector)
+    {
+        if (!player.IsBot && infector?.IsBot != true)
+            return;
+
+        Server.ExecuteCommand("bot_stop 0");
+        Server.ExecuteCommand("bot_dont_shoot 0");
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+            Server.NextFrame(() =>
+            {
+                Server.ExecuteCommand("bot_stop 0");
+                Server.ExecuteCommand("bot_dont_shoot 0");
+            });
+
+            await Task.Delay(600);
+            Server.NextFrame(() =>
+            {
+                Server.ExecuteCommand("bot_stop 0");
+                Server.ExecuteCommand("bot_dont_shoot 0");
+            });
+        });
+    }
+
+    private static bool IsKnifePickup(EventItemPickup @event)
+    {
+        var item = @event.Item ?? string.Empty;
+        return item.Contains("knife", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool AreSameFaction(
+        CCSPlayerController victim,
+        CCSPlayerController attacker,
+        PlayerState victimState,
+        PlayerState attackerState)
+    {
+        if (victimState.IsZombie == attackerState.IsZombie)
+            return true;
+
+        return victim.Team == attacker.Team
+            && victim.Team is CsTeam.CounterTerrorist or CsTeam.Terrorist;
+    }
+
+    private void ApplyZombieKnockback(CCSPlayerPawn zombiePawn, CCSPlayerController attacker, PlayerState attackerState)
+    {
+        var humanClass = attackerState.SelectedHumanClass;
+        var force = Math.Clamp(
+            humanClass?.ZombieKnockbackForce ?? _config.HumanConfig.ZombieKnockbackForce,
+            0.0f,
+            1200.0f);
+        force *= Math.Clamp(attackerState.ZombieKnockbackMultiplier, 0.0f, 1.0f);
+        if (force <= 0.0f)
+            return;
+
+        var attackerPawn = attacker.PlayerPawn.Value;
+        if (attackerPawn == null || !attackerPawn.IsValid || !zombiePawn.IsValid)
+            return;
+
+        var zombieOrigin = zombiePawn.AbsOrigin;
+        var attackerOrigin = attackerPawn.AbsOrigin;
+
+        Vector direction;
+        if (zombieOrigin != null && attackerOrigin != null)
+        {
+            var dx = zombieOrigin.X - attackerOrigin.X;
+            var dy = zombieOrigin.Y - attackerOrigin.Y;
+            var length = MathF.Sqrt(dx * dx + dy * dy);
+
+            direction = length > 0.001f
+                ? new Vector(dx / length, dy / length, 0.0f)
+                : attackerPawn.EyeAngles.ToForwardVector();
+        }
+        else
+        {
+            direction = attackerPawn.EyeAngles.ToForwardVector();
+            direction.Z = 0.0f;
+        }
+
+        var upForce = Math.Clamp(
+            humanClass?.ZombieKnockbackUpForce ?? _config.HumanConfig.ZombieKnockbackUpForce,
+            0.0f,
+            350.0f);
+        upForce *= Math.Clamp(attackerState.ZombieKnockbackMultiplier, 0.0f, 1.0f);
+        var velocity = new Vector(direction.X * force, direction.Y * force, upForce);
+        zombiePawn.Teleport(velocity: velocity);
     }
 
     private void CheckWinConditions()

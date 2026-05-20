@@ -22,6 +22,11 @@ public static class PawnNetworkStateExtensions
         MarkStateChanged(entity, "CBaseModelEntity", "m_clrRender");
     }
 
+    public static void MarkTeamStateChanged(this CBaseEntity entity)
+    {
+        MarkStateChanged(entity, "CBaseEntity", "m_iTeamNum");
+    }
+
     public static void MarkPlayerStatsStateChanged(this CBaseEntity entity)
     {
         entity.MarkHealthStateChanged();

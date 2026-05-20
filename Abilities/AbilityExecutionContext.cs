@@ -12,6 +12,7 @@ public class AbilityExecutionContext
     public required BasePlugin Plugin { get; init; }
     public required BaseConfig Config { get; init; }
     public required DateTime ServerTime { get; init; }
+    public required Dictionary<ulong, PlayerState> PlayerStates { get; init; }
     public List<CCSPlayerController> AllPlayers { get; init; } = [];
 }
 

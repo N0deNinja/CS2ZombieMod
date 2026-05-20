@@ -9,9 +9,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class SelfDestructExecutor : Ability
 {
-    private const float ExplosionRadius = 300f;
-    private const int ExplosionDamage = 400;
-
     public SelfDestructExecutor()
         : base(
             id: "self_destruct",
@@ -30,16 +27,17 @@ public class SelfDestructExecutor : Ability
         if (pawn == null || pawn.AbsOrigin == null) return;
 
         var origin = pawn.AbsOrigin;
+        var config = context.Config.AbilityConfig.SelfDestruct;
 
         pawn.EmitSound("tr.C4Explode");
 
         var explosion = Utilities.CreateEntityByName<CEnvExplosion>("env_explosion");
 
         explosion!.Magnitude = 40;
-        explosion.PlayerDamage = 40f;
-        explosion.RadiusOverride = 400;
+        explosion.PlayerDamage = Math.Clamp(config.Damage, 0f, 1000f);
+        explosion.RadiusOverride = (int)Math.Clamp(config.Radius, 0f, 2000f);
         explosion.InnerRadius = 0f;
-        explosion.DamageForce = 4000f;
+        explosion.DamageForce = Math.Clamp(config.Force, 0f, 10000f);
         explosion.CreateDebris = true;
         explosion.Render = Color.FromArgb(255, 255, 100, 0);
 
@@ -50,6 +48,6 @@ public class SelfDestructExecutor : Ability
 
 
         player.ExecuteClientCommandFromServer("kill");
-        context.PlayerState.SetCooldown(AbilityType.SelfDestruct, Cooldown);
+        context.PlayerState.SetCooldown(AbilityType.SelfDestruct, config.CooldownSeconds);
     }
 }

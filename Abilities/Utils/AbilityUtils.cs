@@ -65,6 +65,11 @@ public static class AbilityUtils
 
     public static void ApplySpeedBoost(CCSPlayerController player, float multiplier, float duration)
     {
+        ApplySpeedModifier(player, multiplier, duration);
+    }
+
+    public static void ApplySpeedModifier(CCSPlayerController player, float multiplier, float duration)
+    {
         RunTimedEffect(
             player,
             duration,
@@ -88,6 +93,24 @@ public static class AbilityUtils
                 }
             }
         );
+    }
+
+    public static void ApplyKnockbackDebuff(PlayerState state, float multiplier, float durationSeconds)
+    {
+        var expiresAt = DateTime.UtcNow.AddSeconds(durationSeconds);
+        state.ZombieKnockbackMultiplier = Math.Min(state.ZombieKnockbackMultiplier, multiplier);
+        state.KnockbackMultiplierExpiresAtUtc = expiresAt > state.KnockbackMultiplierExpiresAtUtc
+            ? expiresAt
+            : state.KnockbackMultiplierExpiresAtUtc;
+
+        Task.Delay(TimeSpan.FromSeconds(durationSeconds)).ContinueWith(_ =>
+        {
+            if (DateTime.UtcNow >= state.KnockbackMultiplierExpiresAtUtc)
+            {
+                state.ZombieKnockbackMultiplier = 1.0f;
+                state.KnockbackMultiplierExpiresAtUtc = DateTime.MinValue;
+            }
+        });
     }
 
     public static void TrackActiveAbilityDuration(

@@ -4,8 +4,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 
 public class HealthRegenExecutor : Ability
 {
-    private readonly int healPerTick = 20;
-
     public HealthRegenExecutor()
         : base(
             id: "health_regen",
@@ -23,15 +21,17 @@ public class HealthRegenExecutor : Ability
         var playerPawn = player.PlayerPawn.Value;
         if (playerPawn == null) return;
 
-        context.PlayerState.SetCooldown(AbilityType.HealthRegen, Cooldown);
+        var config = context.Config.AbilityConfig.HealthRegen;
 
-        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.HealthRegen, Duration, context.PlayerState);
+        context.PlayerState.SetCooldown(AbilityType.HealthRegen, config.CooldownSeconds);
+
+        AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.HealthRegen, config.DurationSeconds, context.PlayerState);
 
         AbilityUtils.ApplyHealthRegen(
             player,
-            healPerTick,
-            duration: Duration,
-            interval: 1f,
+            Math.Max(1, config.HealPerTick),
+            duration: config.DurationSeconds,
+            interval: Math.Max(0.1f, config.TickIntervalSeconds),
             maxHealth: context.PlayerState!.SelectedZombieType!.Health
         );
     }
