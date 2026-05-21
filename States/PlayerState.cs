@@ -42,6 +42,8 @@ public class PlayerState
     public bool IsLurkerCloaked { get; set; }
     public int LurkerCurrentAlpha { get; set; } = 255;
     public DateTime NextZombiePainSoundAtUtc { get; set; } = DateTime.MinValue;
+    public DateTime NextZombieClawSlashSoundAtUtc { get; set; } = DateTime.MinValue;
+    public DateTime NextZombieClawHitSoundAtUtc { get; set; } = DateTime.MinValue;
 
     public Dictionary<string, ZombieProgression> ZombieProgression { get; set; } = new();
     public Dictionary<string, HumanProgression> HumanProgression { get; set; } = new();
@@ -80,6 +82,8 @@ public class PlayerState
         NextZombiePainSoundAtUtc = DateTime.MinValue;
         AirJumpsUsed = 0;
         AirJumpReady = false;
+        NextZombieClawSlashSoundAtUtc = DateTime.MinValue;
+        NextZombieClawHitSoundAtUtc = DateTime.MinValue;
         ResetLurkerCloakTracking();
     }
 

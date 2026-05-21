@@ -30,7 +30,7 @@ public class PounceExecutor : Ability
         pounceForce.Z += Math.Clamp(config.UpForce, 0f, 1000f);
 
         playerPawn.Teleport(velocity: pounceForce);
-        ZombieSounds.Emit(playerPawn, context.Config, config.ActivationSound);
+        ZombieSounds.EmitWithExtras(playerPawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Pounce, config.DurationSeconds, state);
         context.PlayerState.SetCooldown(AbilityType.Pounce, config.CooldownSeconds);

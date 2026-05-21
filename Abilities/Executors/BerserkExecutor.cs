@@ -28,7 +28,7 @@ public class BerserkExecutor : Ability
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, config.DurationSeconds, state);
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
-        ZombieSounds.Emit(playerPawn, context.Config, config.ActivationSound);
+        ZombieSounds.EmitWithExtras(playerPawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
 
         context.PlayerState.SetCooldown(AbilityType.Berserk, config.CooldownSeconds);
     }

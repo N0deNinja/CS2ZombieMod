@@ -27,7 +27,7 @@ public class InvisibilityExecutor : Ability
 
         var config = context.Config.AbilityConfig.Invisibility;
         var alpha = Math.Clamp(config.Alpha, 0, 255);
-        ZombieSounds.Emit(pawn, context.Config, config.ActivationSound);
+        ZombieSounds.EmitWithExtras(pawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
 
         AbilityUtils.RunTimedEffect(
             player,

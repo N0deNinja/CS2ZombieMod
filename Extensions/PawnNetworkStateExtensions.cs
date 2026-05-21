@@ -30,6 +30,16 @@ public static class PawnNetworkStateExtensions
         MarkStateChanged(entity, "CBaseEntity", "m_fEffects");
     }
 
+    public static void MarkEconStateChanged(this CBaseEntity entity)
+    {
+        TryMarkStateChanged(entity, "CEconEntity", "m_AttributeManager");
+        TryMarkStateChanged(entity, "CAttributeContainer", "m_Item");
+        TryMarkStateChanged(entity, "CEconItemView", "m_iItemDefinitionIndex");
+        TryMarkStateChanged(entity, "CEconItemView", "m_iItemIDHigh");
+        TryMarkStateChanged(entity, "CEconItemView", "m_iItemIDLow");
+        TryMarkStateChanged(entity, "CEconItemView", "m_bInitialized");
+    }
+
     public static void MarkTeamStateChanged(this CBaseEntity entity)
     {
         MarkStateChanged(entity, "CBaseEntity", "m_iTeamNum");
@@ -48,5 +58,16 @@ public static class PawnNetworkStateExtensions
             return;
 
         Utilities.SetStateChanged(entity, className, fieldName, 0);
+    }
+
+    private static void TryMarkStateChanged(CBaseEntity entity, string className, string fieldName)
+    {
+        try
+        {
+            MarkStateChanged(entity, className, fieldName);
+        }
+        catch
+        {
+        }
     }
 }

@@ -37,7 +37,7 @@ public class FrostBoltExecutor : Ability
             Add(pawn.AbsOrigin, Scale(forward, Math.Clamp(config.SpawnForwardOffset, 0f, 128f))),
             new Vector(0f, 0f, Math.Clamp(config.SpawnUpOffset, 0f, 96f)));
 
-        ZombieSounds.Emit(pawn, context.Config, config.CastSound);
+        ZombieSounds.EmitWithExtras(pawn, context.Config, config.CastSound, config.ExtraCastSounds);
         SpawnParticle(config.CastParticle, startPosition, 0.35f);
         LaunchProjectile(context, startPosition, forward, config);
 
@@ -68,6 +68,7 @@ public class FrostBoltExecutor : Ability
             BeamWidth = Math.Clamp(config.BeamWidth, 0.5f, 16f),
             BeamLifetimeSeconds = Math.Clamp(config.BeamLifetimeSeconds, 0.03f, 1f),
             HitSound = config.HitSound,
+            ExtraHitSounds = config.ExtraHitSounds,
             HitMessage = config.HitMessage
         };
 
@@ -172,7 +173,7 @@ public class FrostBoltExecutor : Ability
 
         var targetPawn = target.PlayerPawn.Value;
         if (targetPawn != null && targetPawn.IsValid)
-            ZombieSounds.Emit(targetPawn, context.Config, projectile.HitSound);
+            ZombieSounds.EmitWithExtras(targetPawn, context.Config, projectile.HitSound, projectile.ExtraHitSounds);
 
         AbilityUtils.ApplySpeedModifier(target, projectile.SlowMultiplier, projectile.SlowDurationSeconds);
         target.PrintToChat($"{context.Config.ChatConfig.ZombiePrefix} {projectile.HitMessage}");
@@ -365,6 +366,7 @@ public class FrostBoltExecutor : Ability
         public required float BeamWidth { get; init; }
         public required float BeamLifetimeSeconds { get; init; }
         public required string HitSound { get; init; }
+        public required string[] ExtraHitSounds { get; init; }
         public required string HitMessage { get; init; }
         public float TraveledDistance { get; set; }
         public CParticleSystem? TrailParticle { get; set; }

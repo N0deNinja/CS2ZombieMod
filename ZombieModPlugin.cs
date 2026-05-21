@@ -12,6 +12,7 @@ using ZombieModPlugin.Rounds;
 using ZombieModPlugin.Sounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
+using ZombieModPlugin.Zombies.Services;
 
 
 namespace ZombieModPlugin;
@@ -40,14 +41,15 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     public override void Load(bool hotReload)
     {
-        var zombieHandler = new ZombieHandler(_playerStates, Config);
+        var zombieMeleeVisualService = new ZombieMeleeVisualService(Config);
+        var zombieHandler = new ZombieHandler(_playerStates, Config, zombieMeleeVisualService);
         var humanHandler = new HumanHandler(Config);
         var abilityManager = new AbilityManager();
 
         _generalHandlers = new GeneralHandlers(_playerStates, Config);
         _abilityHandler = new AbilityHandler(_playerStates, Config, this, abilityManager);
         _playerCommandHandler = new PlayerCommandHandler(_playerStates, Config, this);
-        _roundManager = new ZombieRoundManager(_playerStates, Config, zombieHandler, humanHandler);
+        _roundManager = new ZombieRoundManager(_playerStates, Config, zombieHandler, humanHandler, zombieMeleeVisualService);
         _adminTestHandler = new AdminTestHandler(_playerStates, Config, this, zombieHandler, humanHandler, _roundManager);
         _abilityHandler.RegisterCommands();
         _playerCommandHandler.RegisterCommands();
@@ -64,6 +66,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         RegisterEventHandler<EventRoundStart>(_roundManager.OnRoundStart);
         RegisterEventHandler<EventPlayerSpawned>(_roundManager.OnPlayerSpawned);
         RegisterEventHandler<EventItemPickup>(_roundManager.OnItemPickup, HookMode.Pre);
+        RegisterEventHandler<EventWeaponFire>(_roundManager.OnWeaponFire);
         RegisterEventHandler<EventPlayerDeath>(_roundManager.OnPlayerDeath);
         RegisterEventHandler<EventRoundEnd>(_roundManager.OnRoundEnd);
         RegisterListener<Listeners.OnServerPrecacheResources>(OnServerPrecacheResources);
@@ -101,6 +104,12 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
             PrecacheConfiguredModel(manifest, humanClass.PlayerModel);
 
         foreach (var resource in Config.SoundConfig.Resources ?? [])
+            PrecacheConfiguredResource(manifest, resource);
+
+        if (Config.ZombieMeleeVisualConfig.EnableZombieKnifeReplacementModel)
+            PrecacheConfiguredModel(manifest, Config.ZombieMeleeVisualConfig.ZombieKnifeReplacementModelPath);
+
+        foreach (var resource in Config.ZombieMeleeVisualConfig.ZombieClawSoundResources ?? [])
             PrecacheConfiguredResource(manifest, resource);
 
         var frostBolt = Config.AbilityConfig.FrostBolt;

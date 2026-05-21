@@ -8,16 +8,19 @@ using ZombieModPlugin.Extensions;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Drawing;
 using ZombieModPlugin.Zombies.Models;
+using ZombieModPlugin.Zombies.Services;
 
 namespace ZombieModPlugin.Zombies.Handlers;
 
 public class ZombieHandler
 {
     private readonly BaseConfig _config;
+    private readonly ZombieMeleeVisualService _meleeVisualService;
 
-    public ZombieHandler(Dictionary<ulong, PlayerState> playerStates, BaseConfig config)
+    public ZombieHandler(Dictionary<ulong, PlayerState> playerStates, BaseConfig config, ZombieMeleeVisualService meleeVisualService)
     {
         _config = config;
+        _meleeVisualService = meleeVisualService;
     }
 
     public void OnBecomeZombie(CCSPlayerController player, PlayerState playerState)
@@ -53,26 +56,26 @@ public class ZombieHandler
                 if (!player.PawnIsAlive)
                     player.Respawn();
 
-                ScheduleZombieLoadout(player, zombie);
+                ScheduleZombieLoadout(player, playerState, zombie);
             });
         });
     }
 
-    private void ScheduleZombieLoadout(CCSPlayerController player, Zombie zombie)
+    private void ScheduleZombieLoadout(CCSPlayerController player, PlayerState playerState, Zombie zombie)
     {
         var model = GetZombieModel(zombie);
-        Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
+        Server.NextFrame(() => ApplyZombieLoadout(player, playerState, zombie, model, resetHealth: true, resetWeapons: true));
 
         _ = Task.Run(async () =>
         {
             await Task.Delay(250);
-            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
+            Server.NextFrame(() => ApplyZombieLoadout(player, playerState, zombie, model, resetHealth: true, resetWeapons: false));
 
             await Task.Delay(500);
-            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
+            Server.NextFrame(() => ApplyZombieLoadout(player, playerState, zombie, model, resetHealth: true, resetWeapons: false));
 
             await Task.Delay(750);
-            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: false, resetWeapons: true));
+            Server.NextFrame(() => ApplyZombieLoadout(player, playerState, zombie, model, resetHealth: false, resetWeapons: false));
         });
     }
 
@@ -84,7 +87,7 @@ public class ZombieHandler
         if (zombie == null)
             return;
 
-        ApplyZombieLoadout(player, zombie, GetZombieModel(zombie), resetHealth: false, resetWeapons: true);
+        ApplyZombieLoadout(player, playerState, zombie, GetZombieModel(zombie), resetHealth: false, resetWeapons: true);
     }
 
     private string GetZombieModel(Zombie zombie)
@@ -101,7 +104,7 @@ public class ZombieHandler
             ?? _config.ZombieConfig.ZombieTypes.FirstOrDefault();
     }
 
-    private static void ApplyZombieLoadout(CCSPlayerController player, Zombie zombie, string model, bool resetHealth, bool resetWeapons)
+    private void ApplyZombieLoadout(CCSPlayerController player, PlayerState playerState, Zombie zombie, string model, bool resetHealth, bool resetWeapons)
     {
         if (!player.IsValid)
             return;
@@ -127,8 +130,7 @@ public class ZombieHandler
                 pawn.WeaponServices.PreventWeaponPickup = false;
 
             player.RemoveWeapons();
-            StripNonKnifeWeapons(pawn);
-            player.GiveNamedItem("weapon_knife");
+            _meleeVisualService.EnsureConfiguredZombieMeleeWeapon(player, pawn);
             StripNonKnifeWeapons(pawn);
             player.ExecuteClientCommandFromServer("slot3");
             Server.NextFrame(() => StripNonKnifeWeapons(player));
@@ -148,6 +150,7 @@ public class ZombieHandler
         pawn.VelocityModifier = zombie.SpeedModifier;
         pawn.GravityScale = zombie.Gravity;
         pawn.MarkPlayerStatsStateChanged();
+        _meleeVisualService.ScheduleApplyZombieMeleeVisuals(player, playerState);
     }
 
     private static void StripNonKnifeWeapons(CCSPlayerController player)
@@ -175,35 +178,11 @@ public class ZombieHandler
 
         foreach (var weapon in weapons)
         {
-            if (weapon == null || !weapon.IsValid || IsKnifeWeapon(weapon))
+            if (weapon == null || !weapon.IsValid || ZombieMeleeVisualService.IsKnifeWeapon(weapon))
                 continue;
 
             pawn.RemovePlayerItem(weapon);
             weapon.AcceptInput("Kill");
         }
-    }
-
-    private static bool IsKnifeWeapon(CBasePlayerWeapon weapon)
-    {
-        string? weaponName;
-        try
-        {
-            weaponName = weapon.GetWeaponName();
-        }
-        catch
-        {
-            weaponName = string.Empty;
-        }
-
-        return IsKnifeWeaponName(weaponName) || IsKnifeWeaponName(weapon.DesignerName);
-    }
-
-    private static bool IsKnifeWeaponName(string? weaponName)
-    {
-        if (string.IsNullOrWhiteSpace(weaponName))
-            return false;
-
-        return weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase)
-            || weaponName.Contains("bayonet", StringComparison.OrdinalIgnoreCase);
     }
 }

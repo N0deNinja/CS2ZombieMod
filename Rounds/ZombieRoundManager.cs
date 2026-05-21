@@ -12,6 +12,7 @@ using ZombieModPlugin.Humans.Handlers;
 using ZombieModPlugin.Sounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
+using ZombieModPlugin.Zombies.Services;
 
 namespace ZombieModPlugin.Rounds;
 
@@ -24,6 +25,7 @@ public class ZombieRoundManager
     private readonly BaseConfig _config;
     private readonly ZombieHandler _zombieHandler;
     private readonly HumanHandler _humanHandler;
+    private readonly ZombieMeleeVisualService _zombieMeleeVisualService;
     private readonly Random _random = new();
 
     private CancellationTokenSource? _roundCancellation;
@@ -41,12 +43,14 @@ public class ZombieRoundManager
         Dictionary<ulong, PlayerState> playerStates,
         BaseConfig config,
         ZombieHandler zombieHandler,
-        HumanHandler humanHandler)
+        HumanHandler humanHandler,
+        ZombieMeleeVisualService zombieMeleeVisualService)
     {
         _playerStates = playerStates;
         _config = config;
         _zombieHandler = zombieHandler;
         _humanHandler = humanHandler;
+        _zombieMeleeVisualService = zombieMeleeVisualService;
     }
 
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo gameEventInfo)
@@ -96,6 +100,7 @@ public class ZombieRoundManager
     public void ApplyZombieServerRules()
     {
         var nativeRoundMinutes = GetNativeRoundTimeMinutes();
+        var zombieMeleeWeaponName = ZombieMeleeVisualService.ResolveZombieMeleeWeaponName(_config);
         var airAccelerate = Math.Max(0.0f, _config.GeneralConfig.AirAccelerate)
             .ToString(CultureInfo.InvariantCulture);
 
@@ -132,7 +137,7 @@ public class ZombieRoundManager
         Server.ExecuteCommand("mp_give_player_c4 0");
         Server.ExecuteCommand("mp_t_default_primary \"\"");
         Server.ExecuteCommand("mp_t_default_secondary \"\"");
-        Server.ExecuteCommand("mp_t_default_melee weapon_knife");
+        Server.ExecuteCommand($"mp_t_default_melee {zombieMeleeWeaponName}");
         Server.ExecuteCommand("mp_ct_default_primary \"\"");
         Server.ExecuteCommand("mp_ct_default_secondary weapon_usp_silencer");
         Server.ExecuteCommand("mp_ct_default_melee weapon_knife");
@@ -232,7 +237,7 @@ public class ZombieRoundManager
             if (!attackerState.IsZombie)
                 AwardHumanXp(attacker, attackerState, _config.HumanConfig.XPPerKill);
 
-            EmitPlayerSound(victim, _config.SoundConfig.ZombieDeathSound);
+            EmitPlayerSound(victim, _config.SoundConfig.ZombieDeathSound, _config.SoundConfig.ExtraZombieDeathSounds);
             ShowActiveHud();
             CheckWinConditions();
             return HookResult.Continue;
@@ -279,11 +284,13 @@ public class ZombieRoundManager
         if (!attackerState.IsZombie || victimState.IsZombie)
             return HookResult.Continue;
 
+        _zombieMeleeVisualService.OnZombieKnifeHit(attacker, attackerState, victim);
+
         var requiredHits = GetRequiredInfectionHits(victimState);
         victimState.InfectionHitsTaken = Math.Min(requiredHits, victimState.InfectionHitsTaken + 1);
 
         ShowInfectionProgress(victim, attacker, victimState.InfectionHitsTaken, requiredHits);
-        EmitPlayerSound(attacker, _config.SoundConfig.InfectionHitSound);
+        EmitPlayerSound(attacker, _config.SoundConfig.InfectionHitSound, _config.SoundConfig.ExtraInfectionHitSounds);
 
         if (victimState.InfectionHitsTaken >= requiredHits)
         {
@@ -294,6 +301,18 @@ public class ZombieRoundManager
         }
 
         return HookResult.Handled;
+    }
+
+    public HookResult OnWeaponFire(EventWeaponFire @event, GameEventInfo gameEventInfo)
+    {
+        var player = @event.Userid;
+        if (player == null || !IsPlayablePlayer(player))
+            return HookResult.Continue;
+
+        var state = player.GetState(_playerStates);
+        _zombieMeleeVisualService.OnZombieKnifeSlash(player, state, @event.Weapon);
+
+        return HookResult.Continue;
     }
 
     public HookResult OnItemPickup(EventItemPickup @event, GameEventInfo gameEventInfo)
@@ -355,6 +374,8 @@ public class ZombieRoundManager
             return;
 
         var state = player.GetState(_playerStates);
+        _zombieMeleeVisualService.OnZombieAttackButtonsChanged(player, state, pressed);
+
         if (!HasClassAbility(state, AbilityType.MultiJump))
             return;
 
@@ -699,9 +720,10 @@ public class ZombieRoundManager
         state.IsZombie = true;
         _zombieHandler.OnBecomeZombie(player, state);
         ResetBotAiAfterTeamChange(player, infector);
-        EmitPlayerSound(player, isInitialInfection
-            ? _config.SoundConfig.FirstInfectionSound
-            : _config.SoundConfig.InfectionSound);
+        EmitPlayerSound(
+            player,
+            isInitialInfection ? _config.SoundConfig.FirstInfectionSound : _config.SoundConfig.InfectionSound,
+            isInitialInfection ? _config.SoundConfig.ExtraFirstInfectionSounds : _config.SoundConfig.ExtraInfectionSounds);
 
         if (isInitialInfection)
         {
@@ -1150,8 +1172,7 @@ public class ZombieRoundManager
 
     private static bool IsKnifePickup(EventItemPickup @event)
     {
-        var item = @event.Item ?? string.Empty;
-        return item.Contains("knife", StringComparison.OrdinalIgnoreCase);
+        return ZombieMeleeVisualService.IsKnifeWeaponName(@event.Item);
     }
 
     private static bool AreSameFaction(
@@ -1245,7 +1266,7 @@ public class ZombieRoundManager
 
         BroadcastChat(message);
         if (!humansWon)
-            EmitSoundFromRandomAliveZombie(_config.SoundConfig.ZombiesWinSound);
+            EmitSoundFromRandomAliveZombie(_config.SoundConfig.ZombiesWinSound, _config.SoundConfig.ExtraZombiesWinSounds);
 
         BroadcastCenterHtml(humansWon
             ? "<font color='#7fd7ff'>HUMANS WIN</font>"
@@ -1483,10 +1504,13 @@ public class ZombieRoundManager
             player.PrintToCenterAlert(message);
     }
 
-    private void EmitPlayerSound(CCSPlayerController player, string? soundEventName)
+    private void EmitPlayerSound(
+        CCSPlayerController player,
+        string? soundEventName,
+        IEnumerable<string>? extraSoundEventNames = null)
     {
         var pawn = player.PlayerPawn.Value;
-        ZombieSounds.Emit(pawn, _config, soundEventName);
+        ZombieSounds.EmitWithExtras(pawn, _config, soundEventName, extraSoundEventNames);
     }
 
     private void TryEmitZombiePain(CCSPlayerController zombie, PlayerState state)
@@ -1495,7 +1519,7 @@ public class ZombieRoundManager
         if (now < state.NextZombiePainSoundAtUtc)
             return;
 
-        EmitPlayerSound(zombie, _config.SoundConfig.ZombiePainSound);
+        EmitPlayerSound(zombie, _config.SoundConfig.ZombiePainSound, _config.SoundConfig.ExtraZombiePainSounds);
         state.NextZombiePainSoundAtUtc = now.AddSeconds(Math.Max(0.1f, _config.SoundConfig.ZombiePainMinIntervalSeconds));
     }
 
@@ -1504,11 +1528,11 @@ public class ZombieRoundManager
         if (_phase != RoundPhase.Active || now < _nextZombieIdleSoundAtUtc)
             return;
 
-        EmitSoundFromRandomAliveZombie(_config.SoundConfig.ZombieIdleSound);
+        EmitSoundFromRandomAliveZombie(_config.SoundConfig.ZombieIdleSound, _config.SoundConfig.ExtraZombieIdleSounds);
         ScheduleNextZombieIdleSound();
     }
 
-    private void EmitSoundFromRandomAliveZombie(string? soundEventName)
+    private void EmitSoundFromRandomAliveZombie(string? soundEventName, IEnumerable<string>? extraSoundEventNames = null)
     {
         var zombies = GetAlivePlayers()
             .Where(player => player.GetState(_playerStates).IsZombie)
@@ -1517,7 +1541,7 @@ public class ZombieRoundManager
         if (zombies.Count == 0)
             return;
 
-        EmitPlayerSound(zombies[_random.Next(zombies.Count)], soundEventName);
+        EmitPlayerSound(zombies[_random.Next(zombies.Count)], soundEventName, extraSoundEventNames);
     }
 
     private void ScheduleNextZombieIdleSound()

@@ -13,6 +13,7 @@ public class BaseConfig : BasePluginConfig
     public GeneralConfig GeneralConfig { get; set; } = new();
     public AdminTestConfig AdminTestConfig { get; set; } = new();
     public SoundConfig SoundConfig { get; set; } = new();
+    public ZombieMeleeVisualConfig ZombieMeleeVisualConfig { get; set; } = new();
     public ChatConfig ChatConfig { get; set; } = new();
     public CommandsConfig CommandsConfig { get; set; } = new();
     public MessagesConfig MessagesConfig { get; set; } = new();
@@ -34,7 +35,7 @@ public class GeneralConfig
     public bool IncludeBotsInRound { get; set; } = false;
     public float AirAccelerate { get; set; } = 100f;
     public bool AutoDownloadWorkshopAddons { get; set; } = true;
-    public string[] WorkshopAddonIds { get; set; } = ["3170427476"];
+    public string[] WorkshopAddonIds { get; set; } = ["3170427476", "3730088795"];
     public bool RotateWorkshopMaps { get; set; } = false;
     public int RoundsPerWorkshopMap { get; set; } = 5;
     public string[] WorkshopMapIds { get; set; } = ["3685437201", "3222984182", "3283778158"];
@@ -58,16 +59,53 @@ public class AdminTestConfig
 public class SoundConfig
 {
     public bool Enabled { get; set; } = true;
-    public string[] Resources { get; set; } = ["soundevents/soundevents_zr.vsndevts"];
+    public string[] Resources { get; set; } =
+    [
+        "soundevents/soundevents_zr.vsndevts",
+        "soundevents/soundevents_addon.vsndevts",
+        "sounds/claw_strike_1.vsnd",
+        "sounds/claw_strike_2.vsnd",
+        "sounds/zombie_attack_1.vsnd",
+        "sounds/zombie_attack_2.vsnd",
+        "sounds/zombie_attack_3.vsnd",
+        "sounds/zombie_attack_4.vsnd",
+        "sounds/zombie_attack_5.vsnd",
+        "sounds/zombie_attack_6.vsnd",
+        "sounds/zombie_attack_7.vsnd",
+        "sounds/zombie_attack_8.vsnd",
+        "sounds/zombie_attack_9.vsnd",
+        "sounds/zombie_attack_10.vsnd",
+        "sounds/zombie_attack_11.vsnd",
+        "sounds/zombie_attack_12.vsnd",
+    ];
     public string FirstInfectionSound { get; set; } = "zr.amb.scream";
+    public string[] ExtraFirstInfectionSounds { get; set; } = ["zr.zombie_attack_12"];
     public string InfectionSound { get; set; } = "zr.amb.scream";
+    public string[] ExtraInfectionSounds { get; set; } = ["zr.zombie_attack_2"];
     public string InfectionHitSound { get; set; } = "zr.amb.zombie_voice_idle";
+    public string[] ExtraInfectionHitSounds { get; set; } = ["zr.claw.hit"];
     public string ZombiePainSound { get; set; } = "zr.amb.zombie_pain";
+    public string[] ExtraZombiePainSounds { get; set; } = ["zr.zombie_attack_5"];
     public string ZombieDeathSound { get; set; } = "zr.amb.zombie_die";
+    public string[] ExtraZombieDeathSounds { get; set; } = ["zr.zombie_attack_12"];
     public string ZombieIdleSound { get; set; } = "zr.amb.zombie_voice_idle";
+    public string[] ExtraZombieIdleSounds { get; set; } = ["zr.zombie_attack_7"];
     public string ZombiesWinSound { get; set; } = "zr.amb.scream";
+    public string[] ExtraZombiesWinSounds { get; set; } = ["zr.zombie.attack"];
     public float ZombiePainMinIntervalSeconds { get; set; } = 1.2f;
     public float ZombieIdleIntervalSeconds { get; set; } = 14f;
+}
+
+public class ZombieMeleeVisualConfig
+{
+    public string ZombieMeleeWeaponName { get; set; } = "weapon_knife";
+    public int ZombieMeleeItemDefinitionIndex { get; set; } = 516;
+    public bool HideZombieKnifeModel { get; set; } = true;
+    public bool EnableZombieKnifeReplacementModel { get; set; } = true;
+    public string ZombieKnifeReplacementModelPath { get; set; } = "models/zombiemod/viewmodels/v_invisible_knife.vmdl";
+    public string[] ZombieClawSoundResources { get; set; } = [];
+    public string ZombieClawSlashSound { get; set; } = "zr.claw.slash";
+    public string ZombieClawHitSound { get; set; } = "zr.claw.hit";
 }
 
 public class CommandsConfig
@@ -361,6 +399,7 @@ public class AbilitySettingsConfig
     public float DurationSeconds { get; set; } = 5f;
     public int UnlockCost { get; set; } = 100;
     public string ActivationSound { get; set; } = "";
+    public string[] ExtraActivationSounds { get; set; } = [];
 }
 
 public class PounceAbilityConfig : AbilitySettingsConfig
@@ -371,6 +410,7 @@ public class PounceAbilityConfig : AbilitySettingsConfig
         DurationSeconds = 0.1f;
         UnlockCost = 400;
         ActivationSound = "zr.amb.scream";
+        ExtraActivationSounds = ["zr.zombie_attack_1"];
     }
 
     public float Force { get; set; } = 700f;
@@ -382,6 +422,7 @@ public class SpeedBoostAbilityConfig : AbilitySettingsConfig
     public SpeedBoostAbilityConfig()
     {
         ActivationSound = "zr.amb.zombie_voice_idle";
+        ExtraActivationSounds = ["zr.zombie_attack_3"];
     }
 
     public float SpeedMultiplier { get; set; } = 1.5f;
@@ -395,6 +436,7 @@ public class InvisibilityAbilityConfig : AbilitySettingsConfig
         DurationSeconds = 6f;
         UnlockCost = 500;
         ActivationSound = "zr.amb.zombie_voice_idle";
+        ExtraActivationSounds = ["zr.zombie_attack_5"];
     }
 
     public int Alpha { get; set; } = 60;
@@ -405,6 +447,7 @@ public class HealthRegenAbilityConfig : AbilitySettingsConfig
     public HealthRegenAbilityConfig()
     {
         ActivationSound = "zr.amb.zombie_voice_idle";
+        ExtraActivationSounds = ["zr.zombie_attack_7"];
     }
 
     public int HealPerTick { get; set; } = 20;
@@ -416,6 +459,7 @@ public class BerserkAbilityConfig : AbilitySettingsConfig
     public BerserkAbilityConfig()
     {
         ActivationSound = "zr.amb.scream";
+        ExtraActivationSounds = ["zr.zombie_attack_9"];
     }
 
     public float SpeedMultiplier { get; set; } = 1.5f;
@@ -429,6 +473,7 @@ public class SelfDestructAbilityConfig : AbilitySettingsConfig
         DurationSeconds = 0.1f;
         UnlockCost = 300;
         ActivationSound = "zr.amb.scream";
+        ExtraActivationSounds = ["zr.zombie_attack_12"];
     }
 
     public float Radius { get; set; } = 400f;
@@ -461,7 +506,9 @@ public class FrostBoltAbilityConfig : AbilitySettingsConfig
     public string HitParticle { get; set; } = "particles/weapons/cs_weapon_fx/weapon_taser_glow_impact.vpcf";
     public string BeamMaterial { get; set; } = "materials/sprites/laserbeam.vtex";
     public string CastSound { get; set; } = "zr.amb.scream";
+    public string[] ExtraCastSounds { get; set; } = ["zr.zombie_attack_10"];
     public string HitSound { get; set; } = "zr.amb.zombie_pain";
+    public string[] ExtraHitSounds { get; set; } = ["zr.zombie_attack_6"];
     public string HitMessage { get; set; } = "You were chilled by Frost Bolt.";
 }
 
@@ -473,6 +520,7 @@ public class CultistHexAbilityConfig : AbilitySettingsConfig
         DurationSeconds = 4f;
         UnlockCost = 450;
         ActivationSound = "zr.amb.zombie_voice_idle";
+        ExtraActivationSounds = ["zr.zombie_attack_11"];
     }
 
     public float Radius { get; set; } = 450f;

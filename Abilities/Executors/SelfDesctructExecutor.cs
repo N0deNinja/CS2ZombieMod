@@ -30,7 +30,7 @@ public class SelfDestructExecutor : Ability
         var origin = pawn.AbsOrigin;
         var config = context.Config.AbilityConfig.SelfDestruct;
 
-        ZombieSounds.Emit(pawn, context.Config, config.ActivationSound);
+        ZombieSounds.EmitWithExtras(pawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
         pawn.EmitSound("tr.C4Explode");
 
         var explosion = Utilities.CreateEntityByName<CEnvExplosion>("env_explosion");

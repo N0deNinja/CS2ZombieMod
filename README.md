@@ -115,6 +115,54 @@ Use `!zombie <id>` or `!zdefault <id>` to choose your default zombie. Use
 saved in your player state and are applied the next time the round spawns you
 into that role.
 
+## Zombie Claws and Knife Viewmodel
+
+Zombies keep `weapon_knife` internally for CS2 melee timing, hit detection, and
+left-click/right-click attacks. The invisible replacement model hides the knife
+mesh while preserving the working melee behavior. To avoid using the player's
+owned knife animation, the plugin can force the knife econ item definition to
+Shadow Daggers (`516`) while still spawning the safe `weapon_knife` entity.
+Spawning `weapon_knife_push` directly was tested and caused knife drops plus a
+broken zombie viewmodel/attack path.
+
+The plugin strips non-knife weapons from zombies, forces slot 3, and routes
+zombie knife fire/hit events through
+`ZombieMeleeVisualService` so custom claw animations, sounds, and per-class claw
+effects can be added without changing infection logic.
+
+The visual target is zombie hands/claws instead of the default knife blade. The
+CounterStrikeSharp API used by this plugin exposes the networked knife entity
+and pawn viewmodel offsets, but it does not expose a separate first-person
+weapon viewmodel entity or per-player viewmodel model path. The plugin hides the
+networked knife model and keeps the internal knife active; any fuller claw
+viewmodel replacement should be handled by mounted assets outside this plugin
+path.
+
+For the first asset-side experiment, this repo includes a tiny transparent mesh
+source at `assets/zombiemod/invisible_knife/`. Compile it through CS2 Workshop
+Tools / ModelDoc to `models/zombiemod/viewmodels/v_invisible_knife.vmdl`, mount
+that compiled asset, then enable the replacement model config below.
+
+Zombie melee visual settings live under `ZombieMeleeVisualConfig`:
+
+```text
+HideZombieKnifeModel = true
+ZombieMeleeWeaponName = weapon_knife
+ZombieMeleeItemDefinitionIndex = 516
+EnableZombieKnifeReplacementModel = true
+ZombieKnifeReplacementModelPath = models/zombiemod/viewmodels/v_invisible_knife.vmdl
+ZombieClawSoundResources =
+ZombieClawSlashSound =
+ZombieClawHitSound =
+```
+
+`ZombieClawSlashSound` and `ZombieClawHitSound` should be sound event names that
+can be passed to `EmitSound`, not placeholder asset paths. Add any required
+`.vsndevts` or `.vsnd` resources to `ZombieClawSoundResources`. Leaving the
+sound fields empty disables the extra claw sounds and avoids missing-resource
+logs; the built-in knife sounds may still play because the plugin does not
+suppress client-side weapon audio.
+
 ## Admin Test Commands
 
 The plugin includes local testing commands so you can try zombie classes without
