@@ -25,6 +25,17 @@ public class PlayerState
     // Event triggered whenever IsZombie changes
     public event Action<PlayerState, bool>? OnZombieStateChanged;
 
+    public bool ProgressionLoaded { get; set; }
+    public int GlobalLevel { get; set; } = 1;
+    public int GlobalXP { get; set; }
+    public int Money { get; set; }
+    public int LastAppliedNativeMoney { get; set; }
+    public HashSet<string> UnlockedZombieClassIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> UnlockedHumanClassIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, long> Statistics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<int, string> AbilitySlotBinds { get; set; } = [];
+    public Dictionary<ulong, DateTime> InfectionAssistCredits { get; set; } = [];
+
     public Zombie? SelectedZombieType { get; set; }
     public HumanClass? SelectedHumanClass { get; set; }
     public Zombie? PreferredZombieType { get; set; }
@@ -41,6 +52,11 @@ public class PlayerState
     public DateTime LastLurkerCloakCheckUtc { get; set; } = DateTime.MinValue;
     public bool IsLurkerCloaked { get; set; }
     public int LurkerCurrentAlpha { get; set; } = 255;
+    public bool IsWallClinging { get; set; }
+    public DateTime WallClingExpiresAtUtc { get; set; } = DateTime.MinValue;
+    public float? WallClingAnchorX { get; set; }
+    public float? WallClingAnchorY { get; set; }
+    public float? WallClingAnchorZ { get; set; }
     public DateTime NextZombiePainSoundAtUtc { get; set; } = DateTime.MinValue;
     public DateTime NextZombieClawSlashSoundAtUtc { get; set; } = DateTime.MinValue;
     public DateTime NextZombieClawHitSoundAtUtc { get; set; } = DateTime.MinValue;
@@ -82,9 +98,11 @@ public class PlayerState
         NextZombiePainSoundAtUtc = DateTime.MinValue;
         AirJumpsUsed = 0;
         AirJumpReady = false;
+        ResetWallClingState();
         NextZombieClawSlashSoundAtUtc = DateTime.MinValue;
         NextZombieClawHitSoundAtUtc = DateTime.MinValue;
         ResetLurkerCloakTracking();
+        InfectionAssistCredits.Clear();
     }
 
     public void ResetLurkerCloakTracking()
@@ -97,6 +115,16 @@ public class PlayerState
         IsLurkerCloaked = false;
         LurkerCurrentAlpha = 255;
     }
+
+    public void ResetWallClingState()
+    {
+        IsWallClinging = false;
+        WallClingExpiresAtUtc = DateTime.MinValue;
+        WallClingAnchorX = null;
+        WallClingAnchorY = null;
+        WallClingAnchorZ = null;
+        ActiveAbilities.Remove(AbilityType.WallClimb);
+    }
 }
 
 public class ZombieProgression
@@ -105,11 +133,13 @@ public class ZombieProgression
     public int XP { get; set; } = 0;
 
     public List<AbilityType> UnlockedAbilities { get; set; } = [];
-    public HashSet<AbilityType> ActiveAbilities { get; set; } = [];
+    public List<AbilityType> ActiveAbilities { get; set; } = [];
 }
 
 public class HumanProgression
 {
     public int Level { get; set; } = 1;
     public int XP { get; set; } = 0;
+    public List<AbilityType> UnlockedAbilities { get; set; } = [];
+    public List<AbilityType> ActiveAbilities { get; set; } = [];
 }

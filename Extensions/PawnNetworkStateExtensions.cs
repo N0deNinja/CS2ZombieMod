@@ -40,6 +40,12 @@ public static class PawnNetworkStateExtensions
         TryMarkStateChanged(entity, "CEconItemView", "m_bInitialized");
     }
 
+    public static void MarkInventoryStateChanged(this CBaseEntity entity)
+    {
+        TryMarkStateChanged(entity, "CCSPlayerController", "m_pInventoryServices");
+        TryMarkStateChanged(entity, "CCSPlayerController_InventoryServices", "m_vecServerAuthoritativeWeaponSlots");
+    }
+
     public static void MarkTeamStateChanged(this CBaseEntity entity)
     {
         MarkStateChanged(entity, "CBaseEntity", "m_iTeamNum");

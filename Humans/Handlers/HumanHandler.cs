@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Humans.Models;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Humans.Handlers;
@@ -12,10 +13,12 @@ namespace ZombieModPlugin.Humans.Handlers;
 public class HumanHandler
 {
     private readonly BaseConfig _config;
+    private readonly ProgressionService _progressionService;
 
-    public HumanHandler(BaseConfig config)
+    public HumanHandler(BaseConfig config, ProgressionService progressionService)
     {
         _config = config;
+        _progressionService = progressionService;
     }
 
     public void OnBecomeHuman(CCSPlayerController player, PlayerState playerState)
@@ -24,8 +27,7 @@ public class HumanHandler
             return;
 
         var humanClass = playerState.SelectedHumanClass
-            ?? playerState.PreferredHumanClass
-            ?? GetDefaultHumanClass();
+            ?? _progressionService.GetPreferredHuman(playerState);
         playerState.SelectedHumanClass = humanClass;
         playerState.ResetRoleRuntimeState();
 
@@ -49,7 +51,7 @@ public class HumanHandler
                 if (!player.PawnIsAlive)
                     player.Respawn();
 
-                ScheduleHumanLoadout(player, humanClass);
+                ScheduleHumanLoadout(player, playerState, humanClass);
             });
         });
     }
@@ -74,30 +76,29 @@ public class HumanHandler
             };
     }
 
-    private void ScheduleHumanLoadout(CCSPlayerController player, HumanClass humanClass)
+    private void ScheduleHumanLoadout(CCSPlayerController player, PlayerState playerState, HumanClass humanClass)
     {
-        Server.NextFrame(() => ApplyHumanLoadout(player, humanClass, _config, resetHealth: true));
+        Server.NextFrame(() => ApplyHumanLoadout(player, playerState, humanClass, resetHealth: true));
 
         _ = Task.Run(async () =>
         {
             await Task.Delay(150);
-            Server.NextFrame(() => ApplyHumanLoadout(player, humanClass, _config, resetHealth: true));
+            Server.NextFrame(() => ApplyHumanLoadout(player, playerState, humanClass, resetHealth: true));
 
             await Task.Delay(350);
-            Server.NextFrame(() => ApplyHumanLoadout(player, humanClass, _config, resetHealth: true));
+            Server.NextFrame(() => ApplyHumanLoadout(player, playerState, humanClass, resetHealth: true));
         });
     }
 
     public void EnforceHumanAppearance(CCSPlayerController player, PlayerState playerState)
     {
         var humanClass = playerState.SelectedHumanClass
-            ?? playerState.PreferredHumanClass
-            ?? GetDefaultHumanClass();
+            ?? _progressionService.GetPreferredHuman(playerState);
         playerState.SelectedHumanClass = humanClass;
-        ApplyHumanLoadout(player, humanClass, _config, resetHealth: false);
+        ApplyHumanLoadout(player, playerState, humanClass, resetHealth: false);
     }
 
-    private static void ApplyHumanLoadout(CCSPlayerController player, HumanClass humanClass, BaseConfig config, bool resetHealth)
+    private void ApplyHumanLoadout(CCSPlayerController player, PlayerState state, HumanClass humanClass, bool resetHealth)
     {
         if (!player.IsValid)
             return;
@@ -114,15 +115,10 @@ public class HumanHandler
         }
 
         player.RemoveWeapons();
-        foreach (var weapon in GetWeapons(humanClass, config))
+        foreach (var weapon in GetWeapons(humanClass, _config))
             player.GiveNamedItem(weapon);
 
-        var money = Math.Max(0, humanClass.StartingMoney ?? config.HumanConfig.StartingMoney);
-        if (player.InGameMoneyServices != null)
-        {
-            player.InGameMoneyServices.Account = money;
-            player.InGameMoneyServices.StartAccount = money;
-        }
+        _progressionService.ApplyInGameMoney(player, state, save: true);
 
         var pawn = player.PlayerPawn.Value;
         if (pawn == null || !pawn.IsValid)
@@ -133,7 +129,7 @@ public class HumanHandler
 
         var model = !string.IsNullOrWhiteSpace(humanClass.PlayerModel)
             ? humanClass.PlayerModel
-            : config.HumanConfig.PlayerModel;
+            : _config.HumanConfig.PlayerModel;
 
         if (!string.IsNullOrWhiteSpace(model))
             pawn.SetModel(model);

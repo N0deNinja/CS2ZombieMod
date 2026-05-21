@@ -15,7 +15,7 @@ public enum AbilityType
     Berserk,              // +Damage, -Defense boost for short time
     BlindSpit,            // Spits goo to blind (flash effect) in front cone
     SelfDestruct,         // Explode on death, damaging nearby enemies
-    WallClimb,            // Temporarily lets zombie jump higher or climb surfaces
+    WallClimb,            // Temporarily clings in place, useful for sticking to walls
     SummonMinions,        // Spawns weak zombie bots to assist
     Silence,              // Prevents enemies from using weapons for X seconds (simulate with weapon strip + restore)
     EMPPulse,             // Disables enemy HUD/crosshair (simulate with overlays)

@@ -27,7 +27,7 @@ public class SpeedBoostExecutor : Ability
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.SpeedBoost, config.DurationSeconds, context.PlayerState);
         context.PlayerState.SetCooldown(AbilityType.SpeedBoost, config.CooldownSeconds);
-        ZombieSounds.EmitWithExtras(playerPawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
+        ZombieSounds.EmitAbilityActivation(player, context.Config, config);
 
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
     }

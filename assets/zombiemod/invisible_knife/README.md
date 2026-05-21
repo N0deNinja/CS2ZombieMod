@@ -26,7 +26,10 @@ and compile it to:
 models/zombiemod/viewmodels/v_invisible_knife.vmdl
 ```
 
-After the compiled model is mounted on both the server and client, enable:
+The plugin defaults to leaving direct model replacement disabled so a missing or
+mis-mounted asset cannot render CS2's giant `ERROR` placeholder. For local
+asset testing, set `EnableZombieKnifeReplacementModel` to `true` only after the
+compiled model is mounted on both the server and client:
 
 ```text
 ZombieMeleeVisualConfig.EnableZombieKnifeReplacementModel = true

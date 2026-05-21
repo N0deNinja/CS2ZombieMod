@@ -89,6 +89,46 @@ bind x "css_zability_slot 1"
 Use `!abilities` or `css_abilities` while playing as a zombie to list your
 current usable abilities and unlockable abilities. Use `!abilities <ability_id>`
 to unlock an ability for your current zombie type when you have enough XP.
+Ability slots are loadout-based: bind `css_zability 1`, `css_zability 2`, and
+`css_zability 3`, then use `!abilities` on your current zombie to see which
+ability is in each slot. For Lurker, Wall Cling is a slotted active ability
+that starts only while airborne beside a wall and is released with Space;
+Lurker Cloak remains passive and does not need a bind.
+
+### Ability sounds
+
+Ability sounds are configured under `AbilityConfig` in the plugin JSON. Use
+`ActivationSounds` for most abilities; if the list has more than one entry, the
+plugin randomly plays one sound from the list. It does not stack the sounds.
+
+```json
+"Pounce": {
+  "ActivationSounds": [
+    "zr.zombie_attack_1"
+  ]
+}
+```
+
+`FrostBolt` has separate pools for casting and hitting:
+
+```json
+"FrostBolt": {
+  "CastSounds": [ "zr.zombie_attack_10" ],
+  "HitSounds": [ "zr.zombie_attack_6" ]
+}
+```
+
+Older `ActivationSound` and `ExtraActivationSounds` fields still work, but they
+are now treated as one random pool for backwards compatibility. For
+`SelfDestruct`, set `ExplosionSound` to an empty string if `ActivationSounds`
+should be the only sound.
+
+General zombie sound behavior lives under `SoundConfig`. `EmitVolume` raises the
+server-side volume used for emitted sounds. `UseTrackedPlayerSounds` is disabled
+by default because CS2 point sound entities can behave like fixed world sounds
+after playback starts. Keep ability sound clips short, or enable tracked sounds
+only for stationary effects where `StopSound` is more important than following
+the player.
 
 ## Player Chat Commands
 
@@ -97,23 +137,77 @@ Player commands are available in chat with `!command` or from console as
 
 ```text
 !help
+!shop
 !xp
+!stats
 !zombies
+!zombies unlock runner
 !zombie runner
 !zdefault brute
 !humans
+!humans unlock hunter
 !human hunter
 !hdefault vip_heavy
+!abilities
+!abilities unlock berserk
+!abilities equip berserk 2
+!abilities unequip 2
 ```
 
-`!help` prints the quick command list. `!xp` shows XP and level for the class you
-are currently playing, zombie or human. `!zombies` and `!humans` list available
-classes, including each class id and your XP for it.
+`!help` prints the quick command list. `!shop` opens the progression hub with
+links to class lists, ability unlocks, loadouts, and stats. `!xp` and `!stats`
+show global account level, current class level, XP progress, and lifetime
+statistics.
 
-Use `!zombie <id>` or `!zdefault <id>` to choose your default zombie. Use
-`!human <id>` or `!hdefault <id>` to choose your default human. Defaults are
-saved in your player state and are applied the next time the round spawns you
-into that role.
+Use `!zombies` and `!humans` to preview class stats, lock state, unlock
+requirements, and page through longer lists. Use `!zombies unlock <id>` or
+`!humans unlock <id>` once requirements are met. Use `!zombie <id>` or
+`!zdefault <id>` to choose your default zombie, and `!human <id>` or
+`!hdefault <id>` to choose your default human. Defaults persist in SQLite and
+are applied the next time the round spawns you into that role.
+
+Every new player starts at global level 1 with the first configured zombie class
+unlocked and selected. Other zombie and human classes unlock through the
+requirements in `ProgressionConfig`.
+
+## Progression and Persistence
+
+Progression has two layers:
+
+```text
+Global player level: account-wide XP shared across all classes
+Class level: separate XP and level per zombie and human class
+```
+
+SQLite storage starts automatically when the plugin loads. The default database
+file is created under the deployed plugin folder:
+
+```text
+data/zombiemod_progression.db
+```
+
+Balance knobs live under `ProgressionConfig`:
+
+```text
+Database.FilePath
+GlobalLevelCurve
+ClassLevelCurve
+XpRewards.Infection
+XpRewards.ZombieKill
+XpRewards.HumanKill
+XpRewards.RoundWin
+XpRewards.HumanSurvival
+XpRewards.Assist
+ZombieClassUnlocks
+HumanClassUnlocks
+AbilityUnlocks
+MaxEquippedZombieAbilities
+MaxEquippedHumanAbilities
+```
+
+Unlock requirements support global level, class level, future currency, future
+achievement flags, and arbitrary stat thresholds. Class and ability unlocks are
+saved permanently, as are equipped ability loadouts.
 
 ## Zombie Claws and Knife Viewmodel
 
@@ -140,8 +234,10 @@ path.
 
 For the first asset-side experiment, this repo includes a tiny transparent mesh
 source at `assets/zombiemod/invisible_knife/`. Compile it through CS2 Workshop
-Tools / ModelDoc to `models/zombiemod/viewmodels/v_invisible_knife.vmdl`, mount
-that compiled asset, then enable the replacement model config below.
+Tools / ModelDoc to `models/zombiemod/viewmodels/v_invisible_knife.vmdl` and mount
+that compiled asset. The default config below keeps direct model replacement
+disabled because a missing or mis-mounted `.vmdl` renders as CS2's giant
+`ERROR` placeholder; only set it true for local asset testing.
 
 Zombie melee visual settings live under `ZombieMeleeVisualConfig`:
 
@@ -149,7 +245,7 @@ Zombie melee visual settings live under `ZombieMeleeVisualConfig`:
 HideZombieKnifeModel = true
 ZombieMeleeWeaponName = weapon_knife
 ZombieMeleeItemDefinitionIndex = 516
-EnableZombieKnifeReplacementModel = true
+EnableZombieKnifeReplacementModel = false
 ZombieKnifeReplacementModelPath = models/zombiemod/viewmodels/v_invisible_knife.vmdl
 ZombieClawSoundResources =
 ZombieClawSlashSound =
@@ -187,6 +283,15 @@ css_zbots add 3 ct
 css_zbots kick
 css_zround restart
 css_zround status
+css_givexp global 500
+css_givexp zombie 200
+css_giveclassxp zombie brute 500
+css_setlevel global 10
+css_setlevel zombie brute 5
+css_unlockclass zombie brute
+css_unlockability zombie brute selfdestruct
+css_unlockall
+css_resetprogress
 ```
 
 `css_zadmin` prints a numbered test menu. For fast class testing, use
@@ -198,6 +303,10 @@ to leave test mode, kick test bots, and run the normal player-only zombie loop.
 participation, adds the default number of CT bots, and restarts the zombie loop.
 This is useful when you are the only real player but want the countdown and
 infection flow to run against bot humans.
+
+Progression admin commands target yourself by default when run in-game. Add a
+player name or SteamID as the last argument when running from console or when
+editing another connected player.
 
 ## Round Loop
 
@@ -235,6 +344,8 @@ infected, all zombies are eliminated, or humans survive until the round timer
 expires.
 
 The local server config disables CS2 warmup, freeze time, bots, team balancing,
-and native round-win handling. The plugin owns the zombie round loop, shows the
-win message, waits `PostRoundDelaySeconds`, then resets players into the next
-infection countdown without CS2 team-income/restart behavior.
+and native round-win handling. The plugin owns the zombie round loop, awards
+configured global and class XP for infections, kills, assists, round wins, and
+human survival, shows the win message, waits `PostRoundDelaySeconds`, then
+resets players into the next infection countdown without CS2 team-income/restart
+behavior.

@@ -6,9 +6,12 @@ using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Abilities;
+using ZombieModPlugin.Blockades;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Humans.Handlers;
+using ZombieModPlugin.Progression.Models;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.Sounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
@@ -26,6 +29,8 @@ public class ZombieRoundManager
     private readonly ZombieHandler _zombieHandler;
     private readonly HumanHandler _humanHandler;
     private readonly ZombieMeleeVisualService _zombieMeleeVisualService;
+    private readonly ProgressionService _progressionService;
+    private readonly BlockadeService _blockadeService;
     private readonly Random _random = new();
 
     private CancellationTokenSource? _roundCancellation;
@@ -44,14 +49,20 @@ public class ZombieRoundManager
         BaseConfig config,
         ZombieHandler zombieHandler,
         HumanHandler humanHandler,
-        ZombieMeleeVisualService zombieMeleeVisualService)
+        ZombieMeleeVisualService zombieMeleeVisualService,
+        ProgressionService progressionService,
+        BlockadeService blockadeService)
     {
         _playerStates = playerStates;
         _config = config;
         _zombieHandler = zombieHandler;
         _humanHandler = humanHandler;
         _zombieMeleeVisualService = zombieMeleeVisualService;
+        _progressionService = progressionService;
+        _blockadeService = blockadeService;
     }
+
+    public bool IsBlockadePlacementAllowed => _phase is RoundPhase.Active or RoundPhase.Testing;
 
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo gameEventInfo)
     {
@@ -62,6 +73,7 @@ public class ZombieRoundManager
     public HookResult OnRoundEnd(EventRoundEnd @event, GameEventInfo gameEventInfo)
     {
         CancelRoundLifecycle();
+        ZombieSounds.StopAllTrackedSounds();
         _phase = RoundPhase.Ended;
         ResetRoundState();
 
@@ -103,6 +115,12 @@ public class ZombieRoundManager
         var zombieMeleeWeaponName = ZombieMeleeVisualService.ResolveZombieMeleeWeaponName(_config);
         var airAccelerate = Math.Max(0.0f, _config.GeneralConfig.AirAccelerate)
             .ToString(CultureInfo.InvariantCulture);
+        var buyAnywhere = _config.HumanConfig.BuyAnywhereAnytime;
+        var buyTimeMinutes = buyAnywhere
+            ? Math.Max(1, _config.HumanConfig.BuyTimeMinutes)
+            : 0;
+        var maxMoney = _progressionService.GetNativeMoneyDisplayCap();
+        var startMoney = _progressionService.GetNativeMoneyForBalance(_config.HumanConfig.StartingMoney);
 
         if (ShouldIncludeBots())
         {
@@ -132,8 +150,13 @@ public class ZombieRoundManager
         Server.ExecuteCommand("mp_autoteambalance 0");
         Server.ExecuteCommand("mp_limitteams 0");
         Server.ExecuteCommand("mp_solid_teammates 0");
-        Server.ExecuteCommand("mp_buytime 0");
-        Server.ExecuteCommand("mp_buy_anywhere 0");
+        Server.ExecuteCommand($"mp_buytime {buyTimeMinutes}");
+        Server.ExecuteCommand($"mp_buy_anywhere {(buyAnywhere ? 1 : 0)}");
+        Server.ExecuteCommand($"mp_maxmoney {maxMoney}");
+        Server.ExecuteCommand($"mp_startmoney {startMoney}");
+        Server.ExecuteCommand("mp_afterroundmoney 0");
+        Server.ExecuteCommand("mp_playercashawards 0");
+        Server.ExecuteCommand("mp_teamcashawards 0");
         Server.ExecuteCommand("mp_give_player_c4 0");
         Server.ExecuteCommand("mp_t_default_primary \"\"");
         Server.ExecuteCommand("mp_t_default_secondary \"\"");
@@ -153,6 +176,8 @@ public class ZombieRoundManager
 
     public void OnMapStarted(string mapName)
     {
+        _blockadeService.ClearAll();
+
         var mapNames = GetConfiguredWorkshopMapNames();
         var currentIndex = Array.FindIndex(
             mapNames,
@@ -167,6 +192,7 @@ public class ZombieRoundManager
     public void EnterAdminTestMode()
     {
         CancelRoundLifecycle();
+        _blockadeService.ClearAll();
         _phase = RoundPhase.Testing;
         ApplyZombieServerRules();
         Console.WriteLine("[ZombieMod] Admin test mode enabled.");
@@ -226,6 +252,8 @@ public class ZombieRoundManager
         if (victim == null || attacker == null)
             return HookResult.Continue;
 
+        ZombieSounds.StopPlayerSounds(victim);
+
         if (!IsPlayablePlayer(victim) || !IsPlayablePlayer(attacker) || victim == attacker)
             return HookResult.Continue;
 
@@ -235,9 +263,12 @@ public class ZombieRoundManager
         if (victimState.IsZombie)
         {
             if (!attackerState.IsZombie)
-                AwardHumanXp(attacker, attackerState, _config.HumanConfig.XPPerKill);
+            {
+                _progressionService.AwardReward(attacker, attackerState, ProgressionRewardType.ZombieKill, "zombie_kills");
+                _progressionService.AwardHumanMoney(attacker, attackerState, _config.HumanConfig.MoneyPerKill, "zombie kill");
+            }
 
-            EmitPlayerSound(victim, _config.SoundConfig.ZombieDeathSound, _config.SoundConfig.ExtraZombieDeathSounds);
+            EmitPlayerSoundUntracked(victim, _config.SoundConfig.ZombieDeathSound, _config.SoundConfig.ExtraZombieDeathSounds);
             ShowActiveHud();
             CheckWinConditions();
             return HookResult.Continue;
@@ -247,7 +278,7 @@ public class ZombieRoundManager
             return HookResult.Continue;
 
         InfectPlayer(victim, attacker, isInitialInfection: false);
-        AwardZombieXp(attacker, attackerState, _config.ZombieConfig.XPPerKill);
+        _progressionService.AwardReward(attacker, attackerState, ProgressionRewardType.HumanKill, "infections");
         ShowActiveHud();
         CheckWinConditions();
 
@@ -256,6 +287,9 @@ public class ZombieRoundManager
 
     public HookResult OnPlayerTakeDamagePre(CCSPlayerPawn victimPawn, CTakeDamageInfo damageInfo)
     {
+        if (IsFallDamage(damageInfo))
+            return HookResult.Handled;
+
         if (_phase != RoundPhase.Active)
             return HookResult.Continue;
 
@@ -288,6 +322,7 @@ public class ZombieRoundManager
 
         var requiredHits = GetRequiredInfectionHits(victimState);
         victimState.InfectionHitsTaken = Math.Min(requiredHits, victimState.InfectionHitsTaken + 1);
+        victimState.InfectionAssistCredits[attacker.GetStateKey()] = DateTime.UtcNow;
 
         ShowInfectionProgress(victim, attacker, victimState.InfectionHitsTaken, requiredHits);
         EmitPlayerSound(attacker, _config.SoundConfig.InfectionHitSound, _config.SoundConfig.ExtraInfectionHitSounds);
@@ -295,12 +330,17 @@ public class ZombieRoundManager
         if (victimState.InfectionHitsTaken >= requiredHits)
         {
             InfectPlayer(victim, attacker, isInitialInfection: false);
-            AwardZombieXp(attacker, attackerState, _config.ZombieConfig.XPPerKill);
+            _progressionService.AwardReward(attacker, attackerState, ProgressionRewardType.Infection, "infections");
             ShowActiveHud();
             CheckWinConditions();
         }
 
         return HookResult.Handled;
+    }
+
+    private static bool IsFallDamage(CTakeDamageInfo damageInfo)
+    {
+        return (damageInfo.BitsDamageType & DamageTypes_t.DMG_FALL) == DamageTypes_t.DMG_FALL;
     }
 
     public HookResult OnWeaponFire(EventWeaponFire @event, GameEventInfo gameEventInfo)
@@ -338,6 +378,7 @@ public class ZombieRoundManager
         if (!IsPlayablePlayer(player) || player == null)
             return HookResult.Continue;
 
+        ZombieSounds.StopPlayerSounds(player);
         Server.NextFrame(() => EnforcePlayerRole(player));
 
         if (_config.GeneralConfig.RandomizePlayerSpawns
@@ -359,6 +400,10 @@ public class ZombieRoundManager
                 continue;
 
             var state = player.GetState(_playerStates);
+            if (!state.IsZombie)
+                _progressionService.SyncNativeMoney(player, state, save: true);
+
+            UpdateWallCling(player, state);
             ResetAirJumpsIfGrounded(player, state);
 
             if (_phase is RoundPhase.Active or RoundPhase.Testing)
@@ -366,6 +411,7 @@ public class ZombieRoundManager
         }
 
         TryEmitZombieIdleSound(now);
+        _blockadeService.OnTick();
     }
 
     public void OnPlayerButtonsChanged(CCSPlayerController player, PlayerButtons pressed, PlayerButtons released)
@@ -374,7 +420,14 @@ public class ZombieRoundManager
             return;
 
         var state = player.GetState(_playerStates);
+        if (state.IsWallClinging && pressed.HasFlag(PlayerButtons.Jump))
+        {
+            CancelWallCling(player, state, notify: true);
+            return;
+        }
+
         _zombieMeleeVisualService.OnZombieAttackButtonsChanged(player, state, pressed);
+        _blockadeService.OnPlayerButtonsChanged(player, state, pressed);
 
         if (!HasClassAbility(state, AbilityType.MultiJump))
             return;
@@ -421,6 +474,46 @@ public class ZombieRoundManager
 
         if (state.IsZombie)
             EmitPlayerSound(player, _config.SoundConfig.ZombieIdleSound);
+    }
+
+    private void UpdateWallCling(CCSPlayerController player, PlayerState state)
+    {
+        if (!state.IsWallClinging)
+            return;
+
+        if (!state.IsZombie || !HasClassAbility(state, AbilityType.WallClimb))
+        {
+            CancelWallCling(player, state, notify: false);
+            return;
+        }
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+        {
+            CancelWallCling(player, state, notify: false);
+            return;
+        }
+
+        if (!state.WallClingAnchorX.HasValue || !state.WallClingAnchorY.HasValue || !state.WallClingAnchorZ.HasValue)
+        {
+            CancelWallCling(player, state, notify: false);
+            return;
+        }
+
+        var anchor = new Vector(
+            state.WallClingAnchorX.Value,
+            state.WallClingAnchorY.Value,
+            state.WallClingAnchorZ.Value);
+
+        pawn.Teleport(anchor, null, new Vector(0.0f, 0.0f, 0.0f));
+    }
+
+    private void CancelWallCling(CCSPlayerController player, PlayerState state, bool notify)
+    {
+        state.ResetWallClingState();
+
+        if (notify && player.IsValid)
+            player.PrintToCenter(_config.AbilityConfig.WallClimb.CancelMessage);
     }
 
     private void StartRoundLifecycle()
@@ -628,6 +721,8 @@ public class ZombieRoundManager
 
     private void ResetRoundState()
     {
+        ZombieSounds.StopAllTrackedSounds();
+
         foreach (var state in _playerStates.Values)
         {
             state.IsZombie = false;
@@ -639,6 +734,7 @@ public class ZombieRoundManager
         }
 
         _scatteredThisRound.Clear();
+        _blockadeService.ClearAll();
     }
 
     private void ScatterAlivePlayersAcrossMapSpawns()
@@ -716,6 +812,9 @@ public class ZombieRoundManager
         if (state.IsZombie)
             return;
 
+        if (infector != null)
+            AwardInfectionAssists(player, infector);
+
         state.InfectionHitsTaken = 0;
         state.IsZombie = true;
         _zombieHandler.OnBecomeZombie(player, state);
@@ -740,74 +839,33 @@ public class ZombieRoundManager
         }
     }
 
-    private void AwardZombieXp(CCSPlayerController player, PlayerState state, int xp)
+    private void AwardInfectionAssists(CCSPlayerController victim, CCSPlayerController infector)
     {
-        if (xp <= 0 || state.SelectedZombieType == null)
+        var victimState = victim.GetState(_playerStates);
+        var now = DateTime.UtcNow;
+        var infectorKey = infector.GetStateKey();
+        var assistKeys = victimState.InfectionAssistCredits
+            .Where(entry => entry.Key != infectorKey && (now - entry.Value).TotalSeconds <= 12)
+            .Select(entry => entry.Key)
+            .Distinct()
+            .ToList();
+
+        victimState.InfectionAssistCredits.Clear();
+
+        if (assistKeys.Count == 0)
             return;
 
-        var zombie = state.SelectedZombieType;
-        if (!state.ZombieProgression.TryGetValue(zombie.Id, out var progression))
+        foreach (var assister in GetConnectedPlayers())
         {
-            progression = new ZombieProgression
-            {
-                Level = _config.ZombieConfig.StartingLevel
-            };
-            state.ZombieProgression[zombie.Id] = progression;
+            if (!assistKeys.Contains(assister.GetStateKey()))
+                continue;
+
+            var assisterState = assister.GetState(_playerStates);
+            if (!assisterState.IsZombie)
+                continue;
+
+            _progressionService.AwardReward(assister, assisterState, ProgressionRewardType.Assist, "assists");
         }
-
-        progression.XP += xp;
-        player.PrintToChat($"{_config.ChatConfig.ZombiePrefix} +{xp} XP for {zombie.Name}.");
-
-        while (progression.Level < _config.ZombieConfig.MaxLevel)
-        {
-            var requiredXp = GetRequiredXpForNextLevel(progression.Level);
-            if (progression.XP < requiredXp)
-                break;
-
-            progression.XP -= requiredXp;
-            progression.Level++;
-            player.PrintToChat(string.Format(_config.MessagesConfig.LevelUp, progression.Level));
-        }
-    }
-
-    private int GetRequiredXpForNextLevel(int currentLevel)
-    {
-        return Math.Max(1, _config.ZombieConfig.XPPerLevel * Math.Max(1, currentLevel));
-    }
-
-    private void AwardHumanXp(CCSPlayerController player, PlayerState state, int xp)
-    {
-        if (xp <= 0 || state.SelectedHumanClass == null)
-            return;
-
-        var humanClass = state.SelectedHumanClass;
-        if (!state.HumanProgression.TryGetValue(humanClass.Id, out var progression))
-        {
-            progression = new HumanProgression
-            {
-                Level = _config.HumanConfig.StartingLevel
-            };
-            state.HumanProgression[humanClass.Id] = progression;
-        }
-
-        progression.XP += xp;
-        player.PrintToChat($"{_config.ChatConfig.HumanPrefix} +{xp} XP for {humanClass.Name}.");
-
-        while (progression.Level < _config.HumanConfig.MaxLevel)
-        {
-            var requiredXp = GetRequiredHumanXpForNextLevel(progression.Level);
-            if (progression.XP < requiredXp)
-                break;
-
-            progression.XP -= requiredXp;
-            progression.Level++;
-            player.PrintToChat(string.Format(_config.MessagesConfig.LevelUp, progression.Level));
-        }
-    }
-
-    private int GetRequiredHumanXpForNextLevel(int currentLevel)
-    {
-        return Math.Max(1, _config.HumanConfig.XPPerLevel * Math.Max(1, currentLevel));
     }
 
     private int GetRequiredInfectionHits(PlayerState victimState)
@@ -992,11 +1050,13 @@ public class ZombieRoundManager
         if (weaponServices == null)
             return;
 
-        ApplyWeaponHandleAlpha(weaponServices.ActiveWeapon, alpha);
-        foreach (var weaponHandle in weaponServices.MyWeapons)
-            ApplyWeaponHandleAlpha(weaponHandle, alpha);
+        var worldWeaponAlpha = alpha < 255 ? 0 : 255;
 
-        TryApplyOwnedModelAlpha(player, pawn, alpha, includeViewModels: false);
+        ApplyWeaponHandleAlpha(weaponServices.ActiveWeapon, worldWeaponAlpha);
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+            ApplyWeaponHandleAlpha(weaponHandle, worldWeaponAlpha);
+
+        TryApplyOwnedModelAlpha(player, pawn, worldWeaponAlpha, includeViewModels: false);
     }
 
     private static void ApplyWeaponHandleAlpha(CHandle<CBasePlayerWeapon> weaponHandle, int alpha)
@@ -1005,7 +1065,7 @@ public class ZombieRoundManager
         if (weapon == null || !weapon.IsValid)
             return;
 
-        ApplyEquipmentRenderAlpha(weapon, alpha);
+        ApplyWorldWeaponRenderAlpha(weapon, alpha);
     }
 
     private static void TryApplyOwnedModelAlpha(CCSPlayerController player, CCSPlayerPawn pawn, int alpha, bool includeViewModels)
@@ -1025,6 +1085,8 @@ public class ZombieRoundManager
                     ApplyEquipmentRenderAlpha(entity, alpha);
                 }
             }
+
+            return;
         }
 
         foreach (var entity in Utilities.GetAllEntities())
@@ -1048,7 +1110,7 @@ public class ZombieRoundManager
             if (!IsOwnedByPlayerOrEquipment(modelEntity, player, pawn))
                 continue;
 
-            ApplyEquipmentRenderAlpha(modelEntity, alpha);
+            ApplyWorldWeaponRenderAlpha(modelEntity, alpha);
         }
     }
 
@@ -1106,6 +1168,20 @@ public class ZombieRoundManager
         entity.MarkRenderStateChanged();
     }
 
+    private static void ApplyWorldWeaponRenderAlpha(CBaseModelEntity entity, int alpha)
+    {
+        alpha = alpha < 255 ? 0 : 255;
+        entity.RenderMode = alpha < 255 ? RenderMode_t.kRenderTransAlpha : RenderMode_t.kRenderNormal;
+        entity.RenderFX = RenderFx_t.kRenderFxNone;
+        entity.Render = Color.FromArgb(alpha, 255, 255, 255);
+        entity.Effects &= ~(NoDrawEffect | NoDrawButTransmitEffect);
+
+        Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_nRenderMode");
+        Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_nRenderFX");
+        Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
+        Utilities.SetStateChanged(entity, "CBaseEntity", "m_fEffects");
+    }
+
     private static void ApplyEquipmentRenderAlpha(CBaseModelEntity entity, int alpha)
     {
         ApplyRenderAlpha(entity, alpha);
@@ -1120,20 +1196,7 @@ public class ZombieRoundManager
 
     private bool HasClassAbility(PlayerState state, AbilityType type)
     {
-        if (state.IsZombie)
-        {
-            var zombie = state.SelectedZombieType;
-            if (zombie == null)
-                return false;
-
-            if (zombie.DefaultAbilities.Contains(type))
-                return true;
-
-            return state.ZombieProgression.TryGetValue(zombie.Id, out var progression)
-                && (progression.UnlockedAbilities.Contains(type) || progression.ActiveAbilities.Contains(type));
-        }
-
-        return state.SelectedHumanClass?.DefaultAbilities.Contains(type) == true;
+        return _progressionService.HasAbilityAvailable(state, type);
     }
 
     private static bool IsOnGround(CCSPlayerPawn pawn)
@@ -1272,6 +1335,8 @@ public class ZombieRoundManager
             ? "<font color='#7fd7ff'>HUMANS WIN</font>"
             : "<font color='#ff3d3d'>ZOMBIES WIN</font>", 5);
 
+        AwardRoundEndProgression(humansWon);
+
         Task.Run(async () =>
         {
             await Task.Delay(TimeSpan.FromSeconds(_config.GeneralConfig.PostRoundDelaySeconds));
@@ -1287,6 +1352,25 @@ public class ZombieRoundManager
                     StartRoundLifecycle();
             });
         });
+    }
+
+    private void AwardRoundEndProgression(bool humansWon)
+    {
+        foreach (var player in GetAlivePlayers())
+        {
+            var state = player.GetState(_playerStates);
+            if (humansWon && !state.IsZombie)
+            {
+                _progressionService.SyncNativeMoney(player, state, save: true);
+                _progressionService.AwardReward(player, state, ProgressionRewardType.HumanSurvival, "survivals");
+                _progressionService.AwardReward(player, state, ProgressionRewardType.RoundWin, "wins");
+                _progressionService.AwardHumanMoney(player, state, _config.HumanConfig.MoneyPerRound, "surviving the round");
+            }
+            else if (!humansWon && state.IsZombie)
+            {
+                _progressionService.AwardReward(player, state, ProgressionRewardType.RoundWin, "wins");
+            }
+        }
     }
 
     private bool TryRotateWorkshopMap()
@@ -1505,6 +1589,14 @@ public class ZombieRoundManager
     }
 
     private void EmitPlayerSound(
+        CCSPlayerController player,
+        string? soundEventName,
+        IEnumerable<string>? extraSoundEventNames = null)
+    {
+        ZombieSounds.EmitWithExtras(player, _config, soundEventName, extraSoundEventNames);
+    }
+
+    private void EmitPlayerSoundUntracked(
         CCSPlayerController player,
         string? soundEventName,
         IEnumerable<string>? extraSoundEventNames = null)

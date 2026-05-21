@@ -25,7 +25,7 @@ public class HealthRegenExecutor : Ability
         var config = context.Config.AbilityConfig.HealthRegen;
 
         context.PlayerState.SetCooldown(AbilityType.HealthRegen, config.CooldownSeconds);
-        ZombieSounds.EmitWithExtras(playerPawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
+        ZombieSounds.EmitAbilityActivation(player, context.Config, config);
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.HealthRegen, config.DurationSeconds, context.PlayerState);
 

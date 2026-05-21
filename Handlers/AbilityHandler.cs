@@ -5,6 +5,7 @@ using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Models;
 
@@ -16,24 +17,26 @@ public class AbilityHandler
     private readonly BaseConfig _config;
     private readonly BasePlugin _plugin;
     private readonly AbilityManager _abilityManager;
+    private readonly ProgressionService _progressionService;
 
     public AbilityHandler(
         Dictionary<ulong, PlayerState> playerStates,
         BaseConfig config,
         BasePlugin plugin,
-        AbilityManager abilityManager)
+        AbilityManager abilityManager,
+        ProgressionService progressionService)
     {
         _playerStates = playerStates;
         _config = config;
         _plugin = plugin;
         _abilityManager = abilityManager;
+        _progressionService = progressionService;
     }
 
     public void RegisterCommands()
     {
         _plugin.AddCommand("css_zability", "Use a zombie ability by id or slot number.", OnUseAbilityCommand);
         _plugin.AddCommand("css_zability_slot", "Use a zombie ability by slot number.", OnUseAbilitySlotCommand);
-        _plugin.AddCommand($"css_{NormalizeCommandName(_config.CommandsConfig.Abilities, "abilities")}", "List or unlock zombie abilities.", OnAbilitiesCommand);
     }
 
     private void OnUseAbilityCommand(CCSPlayerController? player, CommandInfo command)
@@ -88,7 +91,7 @@ public class AbilityHandler
         if (!TryGetSelectedZombie(state, command, out var zombie, out var progression))
             return;
 
-        var loadout = GetUsableAbilities(zombie, progression).ToList();
+        var loadout = _progressionService.GetUsableAbilities(state, zombie).ToList();
         if (loadout.Count == 0)
         {
             command.ReplyToCommand("You do not have any usable abilities for this zombie type yet.");

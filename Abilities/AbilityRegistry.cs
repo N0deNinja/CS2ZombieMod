@@ -11,7 +11,8 @@ namespace ZombieModPlugin.Abilities
             { AbilityType.Invisibility, new Executors.InvisibilityExecutor() },
             { AbilityType.SelfDestruct, new Executors.SelfDestructExecutor() },
             { AbilityType.FrostBolt, new Executors.FrostBoltExecutor() },
-            { AbilityType.CultistHex, new Executors.CultistHexExecutor() }
+            { AbilityType.CultistHex, new Executors.CultistHexExecutor() },
+            { AbilityType.WallClimb, new Executors.WallClimbExecutor() }
         };
 
         public static Ability? Get(AbilityType type) =>

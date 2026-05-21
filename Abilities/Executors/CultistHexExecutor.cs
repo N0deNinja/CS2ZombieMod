@@ -29,7 +29,7 @@ public class CultistHexExecutor : Ability
         var speedMultiplier = Math.Clamp(config.HumanSpeedMultiplier, 0.1f, 1.0f);
         var knockbackMultiplier = Math.Clamp(config.KnockbackMultiplier, 0.1f, 1.0f);
         var affected = 0;
-        ZombieSounds.EmitWithExtras(pawn, context.Config, config.ActivationSound, config.ExtraActivationSounds);
+        ZombieSounds.EmitAbilityActivation(player, context.Config, config);
 
         foreach (var target in player.GetPlayersInProximity(context.AllPlayers, radius))
         {

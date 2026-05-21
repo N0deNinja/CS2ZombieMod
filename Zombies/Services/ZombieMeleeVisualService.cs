@@ -18,6 +18,7 @@ public class ZombieMeleeVisualService
     private const int DisabledItemDefinitionIndex = 0;
     private const uint NoDrawEffect = (uint)EntityEffects_t.EF_NODRAW;
     private const uint NoDrawButTransmitEffect = (uint)EntityEffects_t.EF_NODRAW_BUT_TRANSMIT;
+    private const ushort KnifeGearSlot = (ushort)gear_slot_t.GEAR_SLOT_KNIFE;
     private const double SlashSoundMinIntervalSeconds = 0.25;
     private const double HitSoundMinIntervalSeconds = 0.08;
 
@@ -60,7 +61,7 @@ public class ZombieMeleeVisualService
         if (meleeWeapon == null || !meleeWeapon.IsValid)
             return;
 
-        ApplyKnifeVisuals(meleeWeapon);
+        ApplyKnifeVisuals(player, meleeWeapon);
     }
 
     public void OnZombieKnifeSlash(CCSPlayerController player, PlayerState state, string? weaponName)
@@ -139,7 +140,10 @@ public class ZombieMeleeVisualService
             meleeWeapon = FindMeleeWeapon(weaponServices);
 
         if (meleeWeapon != null && IsKnifeWeapon(meleeWeapon))
+        {
+            ApplyKnifeVisuals(player, meleeWeapon);
             player.ExecuteClientCommandFromServer("slot3");
+        }
 
         return meleeWeapon;
     }
@@ -157,13 +161,44 @@ public class ZombieMeleeVisualService
         }
     }
 
-    private void ApplyKnifeVisuals(CBasePlayerWeapon knife)
+    private void ApplyKnifeVisuals(CCSPlayerController player, CBasePlayerWeapon knife)
     {
+        TryApplyMeleeLoadoutItemDefinition(player);
         TryApplyMeleeItemDefinition(knife);
         TryApplyReplacementModelPath(knife);
 
         if (_config.ZombieMeleeVisualConfig.HideZombieKnifeModel)
             HideNetworkedWeaponModel(knife);
+    }
+
+    private void TryApplyMeleeLoadoutItemDefinition(CCSPlayerController player)
+    {
+        var itemDefinitionIndex = _config.ZombieMeleeVisualConfig.ZombieMeleeItemDefinitionIndex;
+        if (itemDefinitionIndex <= DisabledItemDefinitionIndex)
+            return;
+
+        try
+        {
+            var inventoryServices = player.InventoryServices;
+            if (inventoryServices == null)
+                return;
+
+            var clampedItemDefinitionIndex = (ushort)Math.Clamp(itemDefinitionIndex, ushort.MinValue, ushort.MaxValue);
+            foreach (var slot in inventoryServices.ServerAuthoritativeWeaponSlots)
+            {
+                if (slot == null || slot.UnClass != KnifeGearSlot)
+                    continue;
+
+                slot.UnItemDefIdx = clampedItemDefinitionIndex;
+            }
+
+            player.MarkInventoryStateChanged();
+        }
+        catch (Exception ex)
+        {
+            if (_itemDefinitionFailureWarnings.Add(itemDefinitionIndex))
+                Console.WriteLine($"[ZombieMod] Failed to apply zombie melee loadout item definition '{itemDefinitionIndex}': {ex.Message}");
+        }
     }
 
     private void TryApplyMeleeItemDefinition(CBasePlayerWeapon knife)
@@ -251,7 +286,7 @@ public class ZombieMeleeVisualService
             state.NextZombieClawSlashSoundAtUtc = now.AddSeconds(SlashSoundMinIntervalSeconds);
         }
 
-        ZombieSounds.Emit(player.PlayerPawn.Value, _config, soundEventName);
+        ZombieSounds.Emit(player, _config, soundEventName);
     }
 
     private static void ApplyClassSpecificClawEffects(ZombieClawAttackContext context)

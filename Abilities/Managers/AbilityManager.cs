@@ -1,10 +1,18 @@
 using Microsoft.Extensions.Logging;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Abilities.Managers;
 
 public class AbilityManager
 {
+    private readonly ProgressionService _progressionService;
+
+    public AbilityManager(ProgressionService progressionService)
+    {
+        _progressionService = progressionService;
+    }
+
     public void TryActivateAbility(AbilityType type, AbilityExecutionContext context)
     {
         var player = context.Player;
@@ -23,13 +31,7 @@ public class AbilityManager
         }
 
 
-        if (!state.ZombieProgression.TryGetValue(zombie.Id, out var progress))
-        {
-            progress = new ZombieProgression();
-            state.ZombieProgression[zombie.Id] = progress;
-        }
-
-        if (!progress.UnlockedAbilities.Contains(type) && !zombie.DefaultAbilities.Contains(type))
+        if (!_progressionService.HasAbilityAvailable(state, type))
         {
             player.PrintToChat(config.MessagesConfig.InvalidAbility);
             return;
@@ -56,7 +58,8 @@ public class AbilityManager
         try
         {
             ability.Execute(context);
-            player.PrintToChat(string.Format(config.MessagesConfig.AbilityUsed, ability.Name));
+            if (state.GlobalCooldowns.ContainsKey(type) || state.ActiveAbilities.Contains(type))
+                player.PrintToChat(string.Format(config.MessagesConfig.AbilityUsed, ability.Name));
         }
         catch (Exception ex)
         {

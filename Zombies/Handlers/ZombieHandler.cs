@@ -7,6 +7,7 @@ using ZombieModPlugin.States;
 using ZombieModPlugin.Extensions;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Drawing;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.Zombies.Models;
 using ZombieModPlugin.Zombies.Services;
 
@@ -16,18 +17,23 @@ public class ZombieHandler
 {
     private readonly BaseConfig _config;
     private readonly ZombieMeleeVisualService _meleeVisualService;
+    private readonly ProgressionService _progressionService;
 
-    public ZombieHandler(Dictionary<ulong, PlayerState> playerStates, BaseConfig config, ZombieMeleeVisualService meleeVisualService)
+    public ZombieHandler(
+        Dictionary<ulong, PlayerState> playerStates,
+        BaseConfig config,
+        ZombieMeleeVisualService meleeVisualService,
+        ProgressionService progressionService)
     {
         _config = config;
         _meleeVisualService = meleeVisualService;
+        _progressionService = progressionService;
     }
 
     public void OnBecomeZombie(CCSPlayerController player, PlayerState playerState)
     {
         var zombie = playerState.SelectedZombieType
-            ?? playerState.PreferredZombieType
-            ?? GetDefaultZombieClass();
+            ?? _progressionService.GetPreferredZombie(playerState);
         if (zombie == null)
             return;
 
@@ -82,8 +88,7 @@ public class ZombieHandler
     public void EnforceZombieEquipment(CCSPlayerController player, PlayerState playerState)
     {
         var zombie = playerState.SelectedZombieType
-            ?? playerState.PreferredZombieType
-            ?? GetDefaultZombieClass();
+            ?? _progressionService.GetPreferredZombie(playerState);
         if (zombie == null)
             return;
 
@@ -132,7 +137,6 @@ public class ZombieHandler
             player.RemoveWeapons();
             _meleeVisualService.EnsureConfiguredZombieMeleeWeapon(player, pawn);
             StripNonKnifeWeapons(pawn);
-            player.ExecuteClientCommandFromServer("slot3");
             Server.NextFrame(() => StripNonKnifeWeapons(player));
         }
 

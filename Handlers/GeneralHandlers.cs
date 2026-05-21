@@ -2,6 +2,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Events;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Handlers;
@@ -10,13 +11,16 @@ public class GeneralHandlers
 {
     private readonly Dictionary<ulong, PlayerState> _playerStates;
     private readonly BaseConfig _config;
+    private readonly ProgressionService _progressionService;
 
     public GeneralHandlers(
         Dictionary<ulong, PlayerState> playerStates,
-        BaseConfig config)
+        BaseConfig config,
+        ProgressionService progressionService)
     {
         _playerStates = playerStates;
         _config = config;
+        _progressionService = progressionService;
     }
 
     public HookResult OnPlayerConnectFullInitState(EventPlayerConnectFull @event, GameEventInfo gameEventInfo)
@@ -44,8 +48,10 @@ public class GeneralHandlers
                 state.HumanProgression[humanClass.Id] = new HumanProgression();
         }
 
+        _progressionService.BeginLoadPlayer(player, state);
+
         player.PrintToChat($"Welcome, {player.PlayerName}!");
-        player.PrintToChat("Type !help for Zombie Mod commands.");
+        player.PrintToChat("Type !help or !shop for Zombie Mod progression.");
         Console.WriteLine($"[ZombieMod] Player {player.PlayerName} joined - PlayerState initialized.");
 
         return HookResult.Continue;

@@ -2,10 +2,13 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
+using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Humans.Handlers;
 using ZombieModPlugin.Humans.Models;
+using ZombieModPlugin.Progression.Models;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.Rounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
@@ -21,6 +24,7 @@ public class AdminTestHandler
     private readonly ZombieHandler _zombieHandler;
     private readonly HumanHandler _humanHandler;
     private readonly ZombieRoundManager _roundManager;
+    private readonly ProgressionService _progressionService;
 
     public AdminTestHandler(
         Dictionary<ulong, PlayerState> playerStates,
@@ -28,7 +32,8 @@ public class AdminTestHandler
         BasePlugin plugin,
         ZombieHandler zombieHandler,
         HumanHandler humanHandler,
-        ZombieRoundManager roundManager)
+        ZombieRoundManager roundManager,
+        ProgressionService progressionService)
     {
         _playerStates = playerStates;
         _config = config;
@@ -36,6 +41,7 @@ public class AdminTestHandler
         _zombieHandler = zombieHandler;
         _humanHandler = humanHandler;
         _roundManager = roundManager;
+        _progressionService = progressionService;
     }
 
     public void RegisterCommands()
@@ -48,6 +54,13 @@ public class AdminTestHandler
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.HumanClassCommand, "hclass")}", "Force yourself into a human class for testing.", OnHumanCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.BotsCommand, "zbots")}", "Manage Zombie Mod test bots.", OnBotsCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.RoundCommand, "zround")}", "Manage Zombie Mod test round flow.", OnRoundCommand);
+        _plugin.AddCommand("css_givexp", "Give global or class XP to a player.", OnGiveXpCommand);
+        _plugin.AddCommand("css_setlevel", "Set global or class level for a player.", OnSetLevelCommand);
+        _plugin.AddCommand("css_unlockall", "Unlock all progression items for a player.", OnUnlockAllCommand);
+        _plugin.AddCommand("css_resetprogress", "Reset progression for a player.", OnResetProgressCommand);
+        _plugin.AddCommand("css_giveclassxp", "Give class XP to a player.", OnGiveClassXpCommand);
+        _plugin.AddCommand("css_unlockability", "Unlock an ability for a player.", OnUnlockAbilityCommand);
+        _plugin.AddCommand("css_unlockclass", "Unlock a class for a player.", OnUnlockClassCommand);
     }
 
     private void OnAdminMenuCommand(CCSPlayerController? player, CommandInfo command)
@@ -219,6 +232,170 @@ public class AdminTestHandler
         }
     }
 
+    private void OnGiveXpCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command))
+            return;
+
+        if (command.ArgCount < 3 || !int.TryParse(command.GetArg(2), out var amount))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_givexp <global|zombie|human> <amount> [target]");
+            return;
+        }
+
+        if (!TryResolveTarget(player, command, 3, out var target))
+            return;
+
+        var state = target.GetState(_playerStates);
+        var scope = Normalize(command.GetArg(1));
+        if (scope == "global")
+        {
+            _progressionService.AwardXp(target, state, amount, 0, "admin grant");
+            command.ReplyToCommand($"[ZM ADMIN] Gave {amount} global XP to {target.PlayerName}.");
+            return;
+        }
+
+        if (!TryParseRole(scope, out var role))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Scope must be global, zombie, or human.");
+            return;
+        }
+
+        var classId = role == ProgressionClassRole.Zombie
+            ? _progressionService.GetPreferredZombie(state).Id
+            : _progressionService.GetPreferredHuman(state).Id;
+
+        _progressionService.AwardClassXp(target, state, role, classId, amount, "admin class grant");
+        command.ReplyToCommand($"[ZM ADMIN] Gave {amount} {role} class XP to {target.PlayerName}.");
+    }
+
+    private void OnGiveClassXpCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command))
+            return;
+
+        if (command.ArgCount < 4
+            || !TryParseRole(command.GetArg(1), out var role)
+            || !int.TryParse(command.GetArg(3), out var amount))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_giveclassxp <zombie|human> <classId> <amount> [target]");
+            return;
+        }
+
+        if (!TryResolveTarget(player, command, 4, out var target))
+            return;
+
+        if (!ClassExists(role, command.GetArg(2)))
+        {
+            command.ReplyToCommand($"[ZM ADMIN] Unknown {role} class: {command.GetArg(2)}");
+            return;
+        }
+
+        var state = target.GetState(_playerStates);
+        _progressionService.AwardClassXp(target, state, role, command.GetArg(2), amount, "admin class grant");
+        command.ReplyToCommand($"[ZM ADMIN] Gave {amount} XP to {target.PlayerName}'s {_progressionService.GetClassName(role, command.GetArg(2))}.");
+    }
+
+    private void OnSetLevelCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command))
+            return;
+
+        if (command.ArgCount < 3)
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_setlevel global <level> [target] OR css_setlevel <zombie|human> <classId> <level> [target]");
+            return;
+        }
+
+        var scope = Normalize(command.GetArg(1));
+        if (scope == "global")
+        {
+            if (!int.TryParse(command.GetArg(2), out var globalLevel) || !TryResolveTarget(player, command, 3, out var target))
+            {
+                command.ReplyToCommand("[ZM ADMIN] Usage: css_setlevel global <level> [target]");
+                return;
+            }
+
+            _progressionService.SetGlobalLevel(target, target.GetState(_playerStates), globalLevel);
+            command.ReplyToCommand($"[ZM ADMIN] Set {target.PlayerName}'s global level to {globalLevel}.");
+            return;
+        }
+
+        if (command.ArgCount < 4
+            || !TryParseRole(scope, out var role)
+            || !int.TryParse(command.GetArg(3), out var classLevel)
+            || !TryResolveTarget(player, command, 4, out var classTarget))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_setlevel <zombie|human> <classId> <level> [target]");
+            return;
+        }
+
+        if (!ClassExists(role, command.GetArg(2)))
+        {
+            command.ReplyToCommand($"[ZM ADMIN] Unknown {role} class: {command.GetArg(2)}");
+            return;
+        }
+
+        _progressionService.SetClassLevel(classTarget, classTarget.GetState(_playerStates), role, command.GetArg(2), classLevel);
+        command.ReplyToCommand($"[ZM ADMIN] Set {classTarget.PlayerName}'s {_progressionService.GetClassName(role, command.GetArg(2))} level to {classLevel}.");
+    }
+
+    private void OnUnlockAllCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command) || !TryResolveTarget(player, command, 1, out var target))
+            return;
+
+        _progressionService.UnlockAll(target, target.GetState(_playerStates));
+        command.ReplyToCommand($"[ZM ADMIN] Unlocked all classes and abilities for {target.PlayerName}.");
+    }
+
+    private void OnResetProgressCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command) || !TryResolveTarget(player, command, 1, out var target))
+            return;
+
+        _progressionService.ResetProgress(target, target.GetState(_playerStates));
+        command.ReplyToCommand($"[ZM ADMIN] Reset progression for {target.PlayerName}.");
+    }
+
+    private void OnUnlockAbilityCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command))
+            return;
+
+        if (command.ArgCount < 4
+            || !TryParseRole(command.GetArg(1), out var role)
+            || !TryResolveAbility(command.GetArg(3), out var ability))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_unlockability <zombie|human> <classId> <abilityId> [target]");
+            return;
+        }
+
+        if (!TryResolveTarget(player, command, 4, out var target))
+            return;
+
+        var result = _progressionService.ForceUnlockAbility(target, target.GetState(_playerStates), role, command.GetArg(2), ability);
+        command.ReplyToCommand($"[ZM ADMIN] {result.Message}");
+    }
+
+    private void OnUnlockClassCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command))
+            return;
+
+        if (command.ArgCount < 3 || !TryParseRole(command.GetArg(1), out var role))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_unlockclass <zombie|human> <classId> [target]");
+            return;
+        }
+
+        if (!TryResolveTarget(player, command, 3, out var target))
+            return;
+
+        var result = _progressionService.ForceUnlockClass(target, target.GetState(_playerStates), role, command.GetArg(2));
+        command.ReplyToCommand($"[ZM ADMIN] {result.Message}");
+    }
+
     private void PrintMenu(CCSPlayerController? player, CommandInfo command)
     {
         command.ReplyToCommand("=== Zombie Mod Admin Test Menu ===");
@@ -244,6 +421,8 @@ public class AdminTestHandler
         command.ReplyToCommand($"{kickBotsIndex}. Kick bots: css_zadmin kickbots");
         command.ReplyToCommand($"{restartIndex}. Restart zombie loop: css_zadmin restart");
         command.ReplyToCommand($"{statusIndex}. Status: css_zadmin status");
+        command.ReplyToCommand("Progression: css_givexp global 500 | css_setlevel zombie brute 5 | css_unlockall");
+        command.ReplyToCommand("Unlocks: css_unlockclass zombie brute | css_unlockability zombie brute selfdestruct");
         command.ReplyToCommand("Bind example: bind kp_1 \"css_zclass brute\"");
 
         player?.PrintToCenterHtml("<font color='#ff3d3d'>Zombie Admin Test</font><br><font color='#ffffff'>Menu printed in chat/console.</font>", 5);
@@ -492,6 +671,94 @@ public class AdminTestHandler
             if (!state.ZombieProgression.ContainsKey(zombieType.Id))
                 state.ZombieProgression[zombieType.Id] = new ZombieProgression();
         }
+    }
+
+    private bool TryResolveTarget(
+        CCSPlayerController? player,
+        CommandInfo command,
+        int targetArgIndex,
+        out CCSPlayerController target)
+    {
+        target = null!;
+
+        if (command.ArgCount > targetArgIndex)
+        {
+            var targetText = command.GetArg(targetArgIndex);
+            var matches = Utilities.GetPlayers()
+                .Where(candidate => candidate is { IsValid: true }
+                    && !candidate.IsBot
+                    && candidate.Connected == PlayerConnectedState.Connected
+                    && (candidate.PlayerName.Contains(targetText, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(candidate.SteamID.ToString(), targetText, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (matches.Count == 1)
+            {
+                target = matches[0];
+                return true;
+            }
+
+            command.ReplyToCommand(matches.Count == 0
+                ? $"[ZM ADMIN] No connected player matched '{targetText}'."
+                : $"[ZM ADMIN] Multiple players matched '{targetText}'. Use more of the name or SteamID.");
+            return false;
+        }
+
+        if (player is { IsValid: true })
+        {
+            target = player;
+            return true;
+        }
+
+        command.ReplyToCommand("[ZM ADMIN] Console usage requires a target player name or SteamID.");
+        return false;
+    }
+
+    private static bool TryParseRole(string value, out ProgressionClassRole role)
+    {
+        switch (Normalize(value))
+        {
+            case "z":
+            case "zombie":
+            case "zombies":
+                role = ProgressionClassRole.Zombie;
+                return true;
+
+            case "h":
+            case "human":
+            case "humans":
+                role = ProgressionClassRole.Human;
+                return true;
+
+            default:
+                role = default;
+                return false;
+        }
+    }
+
+    private static bool TryResolveAbility(string value, out AbilityType ability)
+    {
+        foreach (var candidate in Enum.GetValues<AbilityType>())
+        {
+            var registered = AbilityRegistry.Get(candidate);
+            if (Normalize(candidate.ToString()) == Normalize(value)
+                || (registered != null
+                    && (Normalize(registered.Id) == Normalize(value) || Normalize(registered.Name) == Normalize(value))))
+            {
+                ability = candidate;
+                return true;
+            }
+        }
+
+        ability = default;
+        return false;
+    }
+
+    private bool ClassExists(ProgressionClassRole role, string classId)
+    {
+        return role == ProgressionClassRole.Zombie
+            ? _progressionService.FindZombie(classId) != null
+            : _progressionService.FindHuman(classId) != null;
     }
 
     private bool CanUse(CCSPlayerController? player, CommandInfo command)

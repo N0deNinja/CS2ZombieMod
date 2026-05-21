@@ -119,12 +119,21 @@ public static class AbilityUtils
     float durationSeconds,
     PlayerState state)
     {
+        state.ActiveAbilities.Add(ability);
+
+        if (durationSeconds <= 0.0f)
+        {
+            state.ActiveAbilities.Remove(ability);
+            return;
+        }
+
         Task.Delay(TimeSpan.FromSeconds(durationSeconds)).ContinueWith(_ =>
         {
-            if (player.IsValid)
+            Server.NextFrame(() =>
             {
-                state.ActiveAbilities.Remove(ability);
-            }
+                if (player.IsValid)
+                    state.ActiveAbilities.Remove(ability);
+            });
         });
     }
 

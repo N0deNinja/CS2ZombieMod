@@ -4,11 +4,16 @@ using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
+using ZombieModPlugin.Blockades;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Handlers;
 using ZombieModPlugin.Humans.Handlers;
+using ZombieModPlugin.Progression.Menus;
+using ZombieModPlugin.Progression.Persistence;
+using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.Rounds;
+using ZombieModPlugin.Shops;
 using ZombieModPlugin.Sounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
@@ -25,8 +30,11 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
     private GeneralHandlers? _generalHandlers;
     private AbilityHandler? _abilityHandler;
     private AdminTestHandler? _adminTestHandler;
-    private PlayerCommandHandler? _playerCommandHandler;
+    private ProgressionCommandHandler? _progressionCommandHandler;
+    private HumanShopCommandHandler? _humanShopCommandHandler;
+    private BlockadeService? _blockadeService;
     private ZombieRoundManager? _roundManager;
+    private ProgressionService? _progressionService;
     private string _currentMapName = string.Empty;
 
     public BaseConfig Config { get; set; } = null!;
@@ -41,18 +49,42 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     public override void Load(bool hotReload)
     {
-        var zombieMeleeVisualService = new ZombieMeleeVisualService(Config);
-        var zombieHandler = new ZombieHandler(_playerStates, Config, zombieMeleeVisualService);
-        var humanHandler = new HumanHandler(Config);
-        var abilityManager = new AbilityManager();
+        var progressionRepository = new SqlitePlayerProgressionRepository(ResolveDatabasePath(Config.ProgressionConfig.Database.FilePath));
+        var progressionLevelService = new ProgressionLevelService();
+        var progressionUnlockService = new ProgressionUnlockService(Config);
+        var progressionService = new ProgressionService(
+            _playerStates,
+            Config,
+            progressionRepository,
+            progressionLevelService,
+            progressionUnlockService);
+        _progressionService = progressionService;
+        progressionService.InitializeAsync().GetAwaiter().GetResult();
 
-        _generalHandlers = new GeneralHandlers(_playerStates, Config);
-        _abilityHandler = new AbilityHandler(_playerStates, Config, this, abilityManager);
-        _playerCommandHandler = new PlayerCommandHandler(_playerStates, Config, this);
-        _roundManager = new ZombieRoundManager(_playerStates, Config, zombieHandler, humanHandler, zombieMeleeVisualService);
-        _adminTestHandler = new AdminTestHandler(_playerStates, Config, this, zombieHandler, humanHandler, _roundManager);
+        var zombieMeleeVisualService = new ZombieMeleeVisualService(Config);
+        var zombieHandler = new ZombieHandler(_playerStates, Config, zombieMeleeVisualService, progressionService);
+        var humanHandler = new HumanHandler(Config, progressionService);
+        var abilityManager = new AbilityManager(progressionService);
+        var progressionMenuRenderer = new ProgressionMenuRenderer(Config, progressionService);
+        var humanWeaponShopService = new HumanWeaponShopService(Config, progressionService);
+        var blockadeService = new BlockadeService(
+            _playerStates,
+            Config,
+            this,
+            progressionService,
+            () => _roundManager?.IsBlockadePlacementAllowed == true);
+        _blockadeService = blockadeService;
+
+        _generalHandlers = new GeneralHandlers(_playerStates, Config, progressionService);
+        _abilityHandler = new AbilityHandler(_playerStates, Config, this, abilityManager, progressionService);
+        _progressionCommandHandler = new ProgressionCommandHandler(_playerStates, Config, this, progressionService, progressionMenuRenderer);
+        _humanShopCommandHandler = new HumanShopCommandHandler(_playerStates, Config, this, progressionService, humanWeaponShopService);
+        _roundManager = new ZombieRoundManager(_playerStates, Config, zombieHandler, humanHandler, zombieMeleeVisualService, progressionService, blockadeService);
+        _adminTestHandler = new AdminTestHandler(_playerStates, Config, this, zombieHandler, humanHandler, _roundManager, progressionService);
         _abilityHandler.RegisterCommands();
-        _playerCommandHandler.RegisterCommands();
+        _progressionCommandHandler.RegisterCommands();
+        _humanShopCommandHandler.RegisterCommands();
+        blockadeService.RegisterCommands();
         _adminTestHandler.RegisterCommands();
 
         RegisterEventHandler<EventPlayerConnectFull>(_generalHandlers.OnPlayerConnectFullInitState);
@@ -90,7 +122,20 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         {
             _roundManager.ApplyZombieServerRules();
             _roundManager.EnsureRoundLifecycleRunning();
+
+            foreach (var player in Utilities.GetPlayers().Where(player => player is { IsValid: true }))
+            {
+                var state = player.GetState(_playerStates);
+                if (!state.ProgressionLoaded)
+                    progressionService.BeginLoadPlayer(player, state);
+            }
         });
+    }
+
+    public override void Unload(bool hotReload)
+    {
+        _blockadeService?.ClearAll();
+        _progressionService?.SaveAllConnectedPlayers();
     }
 
     private void OnServerPrecacheResources(ResourceManifest manifest)
@@ -112,11 +157,18 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         foreach (var resource in Config.ZombieMeleeVisualConfig.ZombieClawSoundResources ?? [])
             PrecacheConfiguredResource(manifest, resource);
 
+        PrecacheConfiguredModel(manifest, Config.BlockadeConfig.MainModel);
+        PrecacheConfiguredModel(manifest, Config.BlockadeConfig.SmallModel);
+
         var frostBolt = Config.AbilityConfig.FrostBolt;
         PrecacheConfiguredResource(manifest, frostBolt.CastParticle);
         PrecacheConfiguredResource(manifest, frostBolt.ProjectileParticle);
         PrecacheConfiguredResource(manifest, frostBolt.HitParticle);
         PrecacheConfiguredResource(manifest, frostBolt.BeamMaterial);
+
+        var pounce = Config.AbilityConfig.Pounce;
+        PrecacheConfiguredResource(manifest, pounce.TrailBeamMaterial);
+        PrecacheConfiguredResource(manifest, pounce.TrailMarkerParticle);
     }
 
     private static void PrecacheConfiguredModel(ResourceManifest manifest, string modelPath)
@@ -191,6 +243,22 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         var trimmedAddonId = addonId.Trim();
         if (!addonIds.Contains(trimmedAddonId, StringComparer.Ordinal))
             addonIds.Add(trimmedAddonId);
+    }
+
+    private string ResolveDatabasePath(string configuredPath)
+    {
+        var path = string.IsNullOrWhiteSpace(configuredPath)
+            ? "data/zombiemod_progression.db"
+            : configuredPath.Trim();
+
+        if (Path.IsPathRooted(path))
+            return path;
+
+        var moduleDirectory = Path.GetDirectoryName(ModulePath);
+        if (string.IsNullOrWhiteSpace(moduleDirectory))
+            moduleDirectory = AppContext.BaseDirectory;
+
+        return Path.Combine(moduleDirectory, path);
     }
 
     public override void OnAllPluginsLoaded(bool hotReload)
