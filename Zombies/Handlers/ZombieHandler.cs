@@ -1,6 +1,7 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API;
+using CounterStrikeSharp.API.Modules.Extensions;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Extensions;
@@ -21,7 +22,9 @@ public class ZombieHandler
 
     public void OnBecomeZombie(CCSPlayerController player, PlayerState playerState)
     {
-        var zombie = playerState.SelectedZombieType ?? GetDefaultZombieClass();
+        var zombie = playerState.SelectedZombieType
+            ?? playerState.PreferredZombieType
+            ?? GetDefaultZombieClass();
         if (zombie == null)
             return;
 
@@ -66,13 +69,18 @@ public class ZombieHandler
             Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
 
             await Task.Delay(500);
-            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: false));
+            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: true, resetWeapons: true));
+
+            await Task.Delay(750);
+            Server.NextFrame(() => ApplyZombieLoadout(player, zombie, model, resetHealth: false, resetWeapons: true));
         });
     }
 
     public void EnforceZombieEquipment(CCSPlayerController player, PlayerState playerState)
     {
-        var zombie = playerState.SelectedZombieType ?? GetDefaultZombieClass();
+        var zombie = playerState.SelectedZombieType
+            ?? playerState.PreferredZombieType
+            ?? GetDefaultZombieClass();
         if (zombie == null)
             return;
 
@@ -109,15 +117,22 @@ public class ZombieHandler
             return;
         }
 
-        if (resetWeapons)
-        {
-            player.RemoveWeapons();
-            player.GiveNamedItem("weapon_knife");
-        }
-
         var pawn = player.PlayerPawn.Value;
         if (pawn == null || !pawn.IsValid)
             return;
+
+        if (resetWeapons)
+        {
+            if (pawn.WeaponServices != null)
+                pawn.WeaponServices.PreventWeaponPickup = false;
+
+            player.RemoveWeapons();
+            StripNonKnifeWeapons(pawn);
+            player.GiveNamedItem("weapon_knife");
+            StripNonKnifeWeapons(pawn);
+            player.ExecuteClientCommandFromServer("slot3");
+            Server.NextFrame(() => StripNonKnifeWeapons(player));
+        }
 
         if (pawn.WeaponServices != null)
             pawn.WeaponServices.PreventWeaponPickup = true;
@@ -133,5 +148,62 @@ public class ZombieHandler
         pawn.VelocityModifier = zombie.SpeedModifier;
         pawn.GravityScale = zombie.Gravity;
         pawn.MarkPlayerStatsStateChanged();
+    }
+
+    private static void StripNonKnifeWeapons(CCSPlayerController player)
+    {
+        if (!player.IsValid)
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        StripNonKnifeWeapons(pawn);
+    }
+
+    private static void StripNonKnifeWeapons(CCSPlayerPawn pawn)
+    {
+        var weaponServices = pawn.WeaponServices;
+        if (weaponServices == null)
+            return;
+
+        var weapons = weaponServices.MyWeapons
+            .Select(handle => handle.Value)
+            .Where(weapon => weapon != null && weapon.IsValid)
+            .ToList();
+
+        foreach (var weapon in weapons)
+        {
+            if (weapon == null || !weapon.IsValid || IsKnifeWeapon(weapon))
+                continue;
+
+            pawn.RemovePlayerItem(weapon);
+            weapon.AcceptInput("Kill");
+        }
+    }
+
+    private static bool IsKnifeWeapon(CBasePlayerWeapon weapon)
+    {
+        string? weaponName;
+        try
+        {
+            weaponName = weapon.GetWeaponName();
+        }
+        catch
+        {
+            weaponName = string.Empty;
+        }
+
+        return IsKnifeWeaponName(weaponName) || IsKnifeWeaponName(weapon.DesignerName);
+    }
+
+    private static bool IsKnifeWeaponName(string? weaponName)
+    {
+        if (string.IsNullOrWhiteSpace(weaponName))
+            return false;
+
+        return weaponName.Contains("knife", StringComparison.OrdinalIgnoreCase)
+            || weaponName.Contains("bayonet", StringComparison.OrdinalIgnoreCase);
     }
 }

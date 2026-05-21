@@ -40,7 +40,11 @@ the release build instead of the default debug build.
 start-server.bat
 ```
 
-By default this starts a LAN/local server on `de_dust2` at port `27015`.
+By default this starts a LAN/local server on `zm_liquid_anomaly_s` at port
+`27015`. The workshop IDs are still mounted and sent to clients through
+MultiAddonManager, but the server loads the extracted map VPKs by their internal
+map names because some workshop items do not expose a usable map list to
+`host_workshop_map`.
 The script copies and executes `server-config/zombiemod_server.cfg`, which
 disables default bots, warmup, freeze time, team balancing, and enables random
 spawn behavior for the local Zombie Mod server.
@@ -53,7 +57,7 @@ connect 127.0.0.1:27015
 You can override the local test map or port:
 
 ```bat
-set CS2_MAP=de_mirage
+set CS2_MAP=zm_silent_village
 set CS2_PORT=27016
 start-server.bat
 ```
@@ -76,17 +80,40 @@ can be used from the console and bound to keys. They also work as chat commands
 without the `css_` prefix.
 
 ```text
-bind mouse4 "css_zability pounce"
-bind mouse5 "css_zability speed_boost"
-bind v "css_zability invisibility"
-bind c "css_zability frost_bolt"
-bind z "css_zability cultist_hex"
+bind mouse4 "css_zability 1"
+bind mouse5 "css_zability 2"
+bind v "css_zability 3"
 bind x "css_zability_slot 1"
 ```
 
 Use `!abilities` or `css_abilities` while playing as a zombie to list your
 current usable abilities and unlockable abilities. Use `!abilities <ability_id>`
 to unlock an ability for your current zombie type when you have enough XP.
+
+## Player Chat Commands
+
+Player commands are available in chat with `!command` or from console as
+`css_command`.
+
+```text
+!help
+!xp
+!zombies
+!zombie runner
+!zdefault brute
+!humans
+!human hunter
+!hdefault vip_heavy
+```
+
+`!help` prints the quick command list. `!xp` shows XP and level for the class you
+are currently playing, zombie or human. `!zombies` and `!humans` list available
+classes, including each class id and your XP for it.
+
+Use `!zombie <id>` or `!zdefault <id>` to choose your default zombie. Use
+`!human <id>` or `!hdefault <id>` to choose your default human. Defaults are
+saved in your player state and are applied the next time the round spawns you
+into that role.
 
 ## Admin Test Commands
 
@@ -145,6 +172,11 @@ MaximumInitialZombies = 0
 RandomizePlayerSpawns = true
 SpawnScatterDelaySeconds = 0.3
 IncludeBotsInRound = false
+AirAccelerate = 100
+RotateWorkshopMaps = true
+RoundsPerWorkshopMap = 1
+WorkshopMapIds = 3685437201, 3222984182, 3283778158
+WorkshopMapNames = zm_liquid_anomaly_s, zm_silent_village, zm_mediumzm
 ```
 
 The round waits until `MinimumPlayersToStart` playable players are connected

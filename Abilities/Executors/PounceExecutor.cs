@@ -1,5 +1,6 @@
 using ZombieModPlugin.Abilities.Utils;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -29,6 +30,7 @@ public class PounceExecutor : Ability
         pounceForce.Z += Math.Clamp(config.UpForce, 0f, 1000f);
 
         playerPawn.Teleport(velocity: pounceForce);
+        ZombieSounds.Emit(playerPawn, context.Config, config.ActivationSound);
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Pounce, config.DurationSeconds, state);
         context.PlayerState.SetCooldown(AbilityType.Pounce, config.CooldownSeconds);

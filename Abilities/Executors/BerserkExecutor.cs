@@ -1,4 +1,5 @@
 using ZombieModPlugin.Abilities.Utils;
+using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -27,6 +28,7 @@ public class BerserkExecutor : Ability
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, config.DurationSeconds, state);
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
+        ZombieSounds.Emit(playerPawn, context.Config, config.ActivationSound);
 
         context.PlayerState.SetCooldown(AbilityType.Berserk, config.CooldownSeconds);
     }

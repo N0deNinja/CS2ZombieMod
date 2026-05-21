@@ -29,6 +29,7 @@ public class GeneralHandlers
 
         state.IsZombie = false;
         state.SelectedZombieType = null;
+        state.SelectedHumanClass = null;
         state.GlobalCooldowns.Clear();
 
         foreach (var zombieType in _config.ZombieConfig.ZombieTypes)
@@ -37,7 +38,14 @@ public class GeneralHandlers
                 state.ZombieProgression[zombieType.Id] = new ZombieProgression();
         }
 
+        foreach (var humanClass in _config.HumanConfig.HumanClasses)
+        {
+            if (!state.HumanProgression.ContainsKey(humanClass.Id))
+                state.HumanProgression[humanClass.Id] = new HumanProgression();
+        }
+
         player.PrintToChat($"Welcome, {player.PlayerName}!");
+        player.PrintToChat("Type !help for Zombie Mod commands.");
         Console.WriteLine($"[ZombieMod] Player {player.PlayerName} joined - PlayerState initialized.");
 
         return HookResult.Continue;

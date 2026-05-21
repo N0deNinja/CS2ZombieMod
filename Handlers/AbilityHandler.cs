@@ -31,7 +31,7 @@ public class AbilityHandler
 
     public void RegisterCommands()
     {
-        _plugin.AddCommand("css_zability", "Use a zombie ability by id.", OnUseAbilityCommand);
+        _plugin.AddCommand("css_zability", "Use a zombie ability by id or slot number.", OnUseAbilityCommand);
         _plugin.AddCommand("css_zability_slot", "Use a zombie ability by slot number.", OnUseAbilitySlotCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(_config.CommandsConfig.Abilities, "abilities")}", "List or unlock zombie abilities.", OnAbilitiesCommand);
     }
@@ -43,11 +43,17 @@ public class AbilityHandler
 
         if (command.ArgCount < 2)
         {
-            command.ReplyToCommand("Usage: css_zability <ability_id>. Example: bind mouse4 \"css_zability pounce\"");
+            command.ReplyToCommand("Usage: css_zability <slot|ability_id>. Example: bind mouse4 \"css_zability 1\"");
             return;
         }
 
         var requestedAbility = command.GetArg(1);
+        if (int.TryParse(requestedAbility, out var slot))
+        {
+            ActivateAbilitySlot(slot, player!, state, command);
+            return;
+        }
+
         if (!TryResolveRegisteredAbility(requestedAbility, out var type, out _))
         {
             command.ReplyToCommand($"Unknown or unimplemented ability: {requestedAbility}");
@@ -68,6 +74,17 @@ public class AbilityHandler
             return;
         }
 
+        ActivateAbilitySlot(slot, player!, state, command);
+    }
+
+    private void ActivateAbilitySlot(int slot, CCSPlayerController player, PlayerState state, CommandInfo command)
+    {
+        if (slot < 1)
+        {
+            command.ReplyToCommand("Ability slots start at 1.");
+            return;
+        }
+
         if (!TryGetSelectedZombie(state, command, out var zombie, out var progression))
             return;
 
@@ -84,7 +101,7 @@ public class AbilityHandler
             return;
         }
 
-        ActivateAbility(loadout[slot - 1], player!, state);
+        ActivateAbility(loadout[slot - 1], player, state);
     }
 
     private void OnAbilitiesCommand(CCSPlayerController? player, CommandInfo command)
@@ -182,7 +199,7 @@ public class AbilityHandler
     private void PrintAbilityList(CommandInfo command, Zombie zombie, ZombieProgression progression)
     {
         command.ReplyToCommand($"{_config.MessagesConfig.ShopHeader} {zombie.Name}");
-        command.ReplyToCommand($"XP: {progression.XP} | Bind example: bind mouse4 \"css_zability pounce\"");
+        command.ReplyToCommand($"XP: {progression.XP} | Bind example: bind mouse4 \"css_zability 1\"");
 
         var usableAbilities = GetUsableAbilities(zombie, progression).ToList();
         if (usableAbilities.Count == 0)

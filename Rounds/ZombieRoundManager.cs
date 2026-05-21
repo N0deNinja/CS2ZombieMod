@@ -9,6 +9,7 @@ using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Humans.Handlers;
+using ZombieModPlugin.Sounds;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Handlers;
 
@@ -16,6 +17,9 @@ namespace ZombieModPlugin.Rounds;
 
 public class ZombieRoundManager
 {
+    private const uint NoDrawEffect = (uint)EntityEffects_t.EF_NODRAW;
+    private const uint NoDrawButTransmitEffect = (uint)EntityEffects_t.EF_NODRAW_BUT_TRANSMIT;
+
     private readonly Dictionary<ulong, PlayerState> _playerStates;
     private readonly BaseConfig _config;
     private readonly ZombieHandler _zombieHandler;
@@ -29,6 +33,9 @@ public class ZombieRoundManager
     private int _lifecycleId;
     private bool _includeBotsForTesting;
     private int _testBotQuota;
+    private int _currentWorkshopMapIndex = -1;
+    private int _completedRoundsOnCurrentWorkshopMap;
+    private DateTime _nextZombieIdleSoundAtUtc = DateTime.MinValue;
 
     public ZombieRoundManager(
         Dictionary<ulong, PlayerState> playerStates,
@@ -89,6 +96,8 @@ public class ZombieRoundManager
     public void ApplyZombieServerRules()
     {
         var nativeRoundMinutes = GetNativeRoundTimeMinutes();
+        var airAccelerate = Math.Max(0.0f, _config.GeneralConfig.AirAccelerate)
+            .ToString(CultureInfo.InvariantCulture);
 
         if (ShouldIncludeBots())
         {
@@ -102,6 +111,7 @@ public class ZombieRoundManager
         }
 
         Server.ExecuteCommand("mp_do_warmup_period 0");
+        Server.ExecuteCommand("sv_cheats 1");
         Server.ExecuteCommand("mp_warmuptime 0");
         Server.ExecuteCommand("mp_warmuptime_all_players_connected 0");
         Server.ExecuteCommand("mp_warmup_end");
@@ -119,6 +129,7 @@ public class ZombieRoundManager
         Server.ExecuteCommand("mp_solid_teammates 0");
         Server.ExecuteCommand("mp_buytime 0");
         Server.ExecuteCommand("mp_buy_anywhere 0");
+        Server.ExecuteCommand("mp_give_player_c4 0");
         Server.ExecuteCommand("mp_t_default_primary \"\"");
         Server.ExecuteCommand("mp_t_default_secondary \"\"");
         Server.ExecuteCommand("mp_t_default_melee weapon_knife");
@@ -132,6 +143,20 @@ public class ZombieRoundManager
         Server.ExecuteCommand("mp_randomspawn_los 0");
         Server.ExecuteCommand("bot_stop 0");
         Server.ExecuteCommand("bot_dont_shoot 0");
+        Server.ExecuteCommand($"sv_airaccelerate {airAccelerate}");
+    }
+
+    public void OnMapStarted(string mapName)
+    {
+        var mapNames = GetConfiguredWorkshopMapNames();
+        var currentIndex = Array.FindIndex(
+            mapNames,
+            name => string.Equals(name, mapName, StringComparison.OrdinalIgnoreCase));
+
+        if (currentIndex >= 0)
+            _currentWorkshopMapIndex = currentIndex;
+
+        _completedRoundsOnCurrentWorkshopMap = 0;
     }
 
     public void EnterAdminTestMode()
@@ -202,6 +227,17 @@ public class ZombieRoundManager
         var victimState = victim.GetState(_playerStates);
         var attackerState = attacker.GetState(_playerStates);
 
+        if (victimState.IsZombie)
+        {
+            if (!attackerState.IsZombie)
+                AwardHumanXp(attacker, attackerState, _config.HumanConfig.XPPerKill);
+
+            EmitPlayerSound(victim, _config.SoundConfig.ZombieDeathSound);
+            ShowActiveHud();
+            CheckWinConditions();
+            return HookResult.Continue;
+        }
+
         if (!attackerState.IsZombie || victimState.IsZombie)
             return HookResult.Continue;
 
@@ -236,6 +272,7 @@ public class ZombieRoundManager
         if (!attackerState.IsZombie && victimState.IsZombie)
         {
             ApplyZombieKnockback(victimPawn, attacker, attackerState);
+            TryEmitZombiePain(victim, victimState);
             return HookResult.Continue;
         }
 
@@ -246,6 +283,7 @@ public class ZombieRoundManager
         victimState.InfectionHitsTaken = Math.Min(requiredHits, victimState.InfectionHitsTaken + 1);
 
         ShowInfectionProgress(victim, attacker, victimState.InfectionHitsTaken, requiredHits);
+        EmitPlayerSound(attacker, _config.SoundConfig.InfectionHitSound);
 
         if (victimState.InfectionHitsTaken >= requiredHits)
         {
@@ -307,11 +345,13 @@ public class ZombieRoundManager
             if (_phase is RoundPhase.Active or RoundPhase.Testing)
                 UpdateLurkerCloak(player, state, now);
         }
+
+        TryEmitZombieIdleSound(now);
     }
 
     public void OnPlayerButtonsChanged(CCSPlayerController player, PlayerButtons pressed, PlayerButtons released)
     {
-        if (!IsPlayablePlayer(player) || !player.PawnIsAlive || !pressed.HasFlag(PlayerButtons.Jump))
+        if (!IsPlayablePlayer(player) || !player.PawnIsAlive)
             return;
 
         var state = player.GetState(_playerStates);
@@ -325,8 +365,18 @@ public class ZombieRoundManager
         if (IsOnGround(pawn))
         {
             state.AirJumpsUsed = 0;
+            state.AirJumpReady = false;
             return;
         }
+
+        if (released.HasFlag(PlayerButtons.Jump))
+        {
+            state.AirJumpReady = true;
+            return;
+        }
+
+        if (!pressed.HasFlag(PlayerButtons.Jump) || !state.AirJumpReady)
+            return;
 
         var config = _config.AbilityConfig.MultiJump;
         var allowedAirJumps = Math.Max(0, state.IsZombie
@@ -337,6 +387,7 @@ public class ZombieRoundManager
             return;
 
         state.AirJumpsUsed++;
+        state.AirJumpReady = false;
 
         var forward = pawn.EyeAngles.ToForwardVector();
         var currentVelocity = pawn.AbsVelocity;
@@ -346,6 +397,9 @@ public class ZombieRoundManager
             Math.Clamp(config.UpForce, 120.0f, 1000.0f));
 
         pawn.Teleport(velocity: velocity);
+
+        if (state.IsZombie)
+            EmitPlayerSound(player, _config.SoundConfig.ZombieIdleSound);
     }
 
     private void StartRoundLifecycle()
@@ -359,6 +413,7 @@ public class ZombieRoundManager
         ApplyZombieServerRules();
         ResetRoundState();
         _scatteredThisRound.Clear();
+        _nextZombieIdleSoundAtUtc = DateTime.MinValue;
 
         Server.NextFrame(() =>
         {
@@ -470,6 +525,7 @@ public class ZombieRoundManager
 
         _phase = RoundPhase.Active;
         _activeRoundEndsAtUtc = DateTime.UtcNow.AddSeconds(_config.GeneralConfig.RoundDurationSeconds);
+        ScheduleNextZombieIdleSound();
 
         var initialZombieCount = CalculateInitialZombieCount(candidates.Count);
         var initialZombies = candidates
@@ -643,6 +699,9 @@ public class ZombieRoundManager
         state.IsZombie = true;
         _zombieHandler.OnBecomeZombie(player, state);
         ResetBotAiAfterTeamChange(player, infector);
+        EmitPlayerSound(player, isInitialInfection
+            ? _config.SoundConfig.FirstInfectionSound
+            : _config.SoundConfig.InfectionSound);
 
         if (isInitialInfection)
         {
@@ -694,6 +753,41 @@ public class ZombieRoundManager
         return Math.Max(1, _config.ZombieConfig.XPPerLevel * Math.Max(1, currentLevel));
     }
 
+    private void AwardHumanXp(CCSPlayerController player, PlayerState state, int xp)
+    {
+        if (xp <= 0 || state.SelectedHumanClass == null)
+            return;
+
+        var humanClass = state.SelectedHumanClass;
+        if (!state.HumanProgression.TryGetValue(humanClass.Id, out var progression))
+        {
+            progression = new HumanProgression
+            {
+                Level = _config.HumanConfig.StartingLevel
+            };
+            state.HumanProgression[humanClass.Id] = progression;
+        }
+
+        progression.XP += xp;
+        player.PrintToChat($"{_config.ChatConfig.HumanPrefix} +{xp} XP for {humanClass.Name}.");
+
+        while (progression.Level < _config.HumanConfig.MaxLevel)
+        {
+            var requiredXp = GetRequiredHumanXpForNextLevel(progression.Level);
+            if (progression.XP < requiredXp)
+                break;
+
+            progression.XP -= requiredXp;
+            progression.Level++;
+            player.PrintToChat(string.Format(_config.MessagesConfig.LevelUp, progression.Level));
+        }
+    }
+
+    private int GetRequiredHumanXpForNextLevel(int currentLevel)
+    {
+        return Math.Max(1, _config.HumanConfig.XPPerLevel * Math.Max(1, currentLevel));
+    }
+
     private int GetRequiredInfectionHits(PlayerState victimState)
     {
         var classOverride = victimState.SelectedHumanClass?.InfectionHitsRequired;
@@ -743,19 +837,26 @@ public class ZombieRoundManager
             return;
 
         if (IsOnGround(pawn))
+        {
             state.AirJumpsUsed = 0;
+            state.AirJumpReady = false;
+        }
+        else if (!player.Buttons.HasFlag(PlayerButtons.Jump))
+        {
+            state.AirJumpReady = true;
+        }
     }
 
     private void UpdateLurkerCloak(CCSPlayerController player, PlayerState state, DateTime now)
     {
         if (!state.IsZombie || !HasClassAbility(state, AbilityType.LurkerCloak))
         {
-            RevealLurkerIfNeeded(player, state);
+            RevealLurkerNow(player, state);
             return;
         }
 
         var config = _config.AbilityConfig.LurkerCloak;
-        if ((now - state.LastLurkerCloakCheckUtc).TotalSeconds < Math.Max(0.05f, config.TickIntervalSeconds))
+        if ((now - state.LastLurkerCloakCheckUtc).TotalSeconds < Math.Max(0.01f, config.TickIntervalSeconds))
             return;
 
         state.LastLurkerCloakCheckUtc = now;
@@ -771,6 +872,7 @@ public class ZombieRoundManager
             state.LastCloakY = origin.Y;
             state.LastCloakZ = origin.Z;
             state.LurkerStationarySinceUtc = now;
+            FadeLurkerTowardVisible(player, state, pawn, config);
             return;
         }
 
@@ -788,35 +890,210 @@ public class ZombieRoundManager
         if (movedDistance > movementThreshold || speed2d > movementThreshold)
         {
             state.LurkerStationarySinceUtc = now;
-            RevealLurkerIfNeeded(player, state);
+            FadeLurkerTowardVisible(player, state, pawn, config);
             return;
         }
 
         state.LurkerStationarySinceUtc ??= now;
-        if ((now - state.LurkerStationarySinceUtc.Value).TotalSeconds < Math.Max(0.0f, config.StationaryDelaySeconds))
+        var cloakReadyAt = state.LurkerStationarySinceUtc.Value.AddSeconds(Math.Max(0.0f, config.StationaryDelaySeconds));
+        if (now < cloakReadyAt)
+        {
+            FadeLurkerTowardVisible(player, state, pawn, config);
             return;
+        }
 
-        if (state.IsLurkerCloaked)
-            return;
+        var fadeInSeconds = Math.Max(0.0f, config.FadeInSeconds);
+        var fadeProgress = fadeInSeconds <= 0.0f
+            ? 1.0f
+            : (float)Math.Clamp((now - cloakReadyAt).TotalSeconds / fadeInSeconds, 0.0, 1.0);
+        var targetAlpha = Math.Clamp(config.Alpha, 0, 255);
+        var alpha = (int)MathF.Round(255 - ((255 - targetAlpha) * fadeProgress));
 
-        pawn.Render = Color.FromArgb(Math.Clamp(config.Alpha, 0, 255), 255, 255, 255);
-        pawn.MarkRenderStateChanged();
-        state.IsLurkerCloaked = true;
+        ApplyLurkerAlpha(player, state, pawn, alpha, config);
     }
 
-    private static void RevealLurkerIfNeeded(CCSPlayerController player, PlayerState state)
+    private static void FadeLurkerTowardVisible(
+        CCSPlayerController player,
+        PlayerState state,
+        CCSPlayerPawn pawn,
+        LurkerCloakAbilityConfig config)
     {
-        if (!state.IsLurkerCloaked)
+        if (state.LurkerCurrentAlpha >= 255)
             return;
 
+        var fadeOutSeconds = Math.Max(0.0f, config.FadeOutSeconds);
+        var minAlpha = Math.Clamp(config.Alpha, 0, 255);
+        var step = fadeOutSeconds <= 0.0f
+            ? 255
+            : Math.Max(1, (int)MathF.Ceiling((255 - minAlpha) * Math.Max(0.01f, config.TickIntervalSeconds) / fadeOutSeconds));
+
+        ApplyLurkerAlpha(player, state, pawn, Math.Min(255, state.LurkerCurrentAlpha + step), config);
+    }
+
+    private static void RevealLurkerNow(CCSPlayerController player, PlayerState state)
+    {
         var pawn = player.PlayerPawn.Value;
         if (pawn != null && pawn.IsValid)
         {
-            pawn.Render = Color.FromArgb(255, 255, 255, 255);
-            pawn.MarkRenderStateChanged();
+            ApplyRenderAlpha(pawn, 255);
+            ApplyWeaponAlpha(player, pawn, 255);
+            TryApplyOwnedModelAlpha(player, pawn, 255, includeViewModels: true);
         }
 
         state.ResetLurkerCloakTracking();
+    }
+
+    private static void ApplyLurkerAlpha(
+        CCSPlayerController player,
+        PlayerState state,
+        CCSPlayerPawn pawn,
+        int alpha,
+        LurkerCloakAbilityConfig config)
+    {
+        alpha = Math.Clamp(alpha, 0, 255);
+        if (state.LurkerCurrentAlpha != alpha)
+            ApplyRenderAlpha(pawn, alpha);
+
+        if (config.ApplyToWeapons)
+            ApplyWeaponAlpha(player, pawn, alpha);
+
+        if (config.ApplyToViewModel)
+            TryApplyOwnedModelAlpha(player, pawn, alpha, includeViewModels: true);
+
+        state.LurkerCurrentAlpha = alpha;
+        state.IsLurkerCloaked = alpha < 255;
+    }
+
+    private static void ApplyWeaponAlpha(CCSPlayerController player, CCSPlayerPawn pawn, int alpha)
+    {
+        var weaponServices = pawn.WeaponServices;
+        if (weaponServices == null)
+            return;
+
+        ApplyWeaponHandleAlpha(weaponServices.ActiveWeapon, alpha);
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+            ApplyWeaponHandleAlpha(weaponHandle, alpha);
+
+        TryApplyOwnedModelAlpha(player, pawn, alpha, includeViewModels: false);
+    }
+
+    private static void ApplyWeaponHandleAlpha(CHandle<CBasePlayerWeapon> weaponHandle, int alpha)
+    {
+        var weapon = weaponHandle.Value;
+        if (weapon == null || !weapon.IsValid)
+            return;
+
+        ApplyEquipmentRenderAlpha(weapon, alpha);
+    }
+
+    private static void TryApplyOwnedModelAlpha(CCSPlayerController player, CCSPlayerPawn pawn, int alpha, bool includeViewModels)
+    {
+        if (includeViewModels)
+        {
+            foreach (var designerName in new[] { "predicted_viewmodel", "viewmodel" })
+            {
+                foreach (var entity in Utilities.FindAllEntitiesByDesignerName<CBaseModelEntity>(designerName))
+                {
+                    if (entity == null || !entity.IsValid)
+                        continue;
+
+                    if (!IsOwnedByPlayerOrEquipment(entity, player, pawn))
+                        continue;
+
+                    ApplyEquipmentRenderAlpha(entity, alpha);
+                }
+            }
+        }
+
+        foreach (var entity in Utilities.GetAllEntities())
+        {
+            if (!entity.IsValid || !ShouldFadeOwnedEquipmentEntity(entity.DesignerName, includeViewModels))
+                continue;
+
+            CBaseModelEntity modelEntity;
+            try
+            {
+                modelEntity = entity.As<CBaseModelEntity>();
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (modelEntity == null || !modelEntity.IsValid)
+                continue;
+
+            if (!IsOwnedByPlayerOrEquipment(modelEntity, player, pawn))
+                continue;
+
+            ApplyEquipmentRenderAlpha(modelEntity, alpha);
+        }
+    }
+
+    private static bool ShouldFadeOwnedEquipmentEntity(string designerName, bool includeViewModels)
+    {
+        if (string.IsNullOrWhiteSpace(designerName))
+            return false;
+
+        return (includeViewModels && designerName.Contains("viewmodel", StringComparison.OrdinalIgnoreCase))
+            || designerName.Contains("weapon", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("knife", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("c4", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("bomb", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOwnedByPlayerOrEquipment(CBaseModelEntity entity, CCSPlayerController player, CCSPlayerPawn pawn)
+    {
+        var owner = entity.OwnerEntity.Value;
+        if (owner != null && owner.IsValid && IsPlayerOrOwnedWeapon(owner, player, pawn))
+            return true;
+
+        var effectEntity = entity.EffectEntity.Value;
+        return effectEntity != null && effectEntity.IsValid && IsPlayerOrOwnedWeapon(effectEntity, player, pawn);
+    }
+
+    private static bool IsPlayerOrOwnedWeapon(CBaseEntity entity, CCSPlayerController player, CCSPlayerPawn pawn)
+    {
+        if (entity.EntityHandle == pawn.EntityHandle || entity.EntityHandle == player.EntityHandle)
+            return true;
+
+        var weaponServices = pawn.WeaponServices;
+        if (weaponServices == null)
+            return false;
+
+        var activeWeapon = weaponServices.ActiveWeapon.Value;
+        if (activeWeapon != null && activeWeapon.IsValid && entity.EntityHandle == activeWeapon.EntityHandle)
+            return true;
+
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon != null && weapon.IsValid && entity.EntityHandle == weapon.EntityHandle)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void ApplyRenderAlpha(CBaseModelEntity entity, int alpha)
+    {
+        alpha = Math.Clamp(alpha, 0, 255);
+        entity.RenderMode = alpha < 255 ? RenderMode_t.kRenderTransAlpha : RenderMode_t.kRenderNormal;
+        entity.RenderFX = RenderFx_t.kRenderFxNone;
+        entity.Render = Color.FromArgb(alpha, 255, 255, 255);
+        entity.MarkRenderStateChanged();
+    }
+
+    private static void ApplyEquipmentRenderAlpha(CBaseModelEntity entity, int alpha)
+    {
+        ApplyRenderAlpha(entity, alpha);
+
+        if (alpha < 255)
+            entity.Effects |= NoDrawEffect;
+        else
+            entity.Effects &= ~(NoDrawEffect | NoDrawButTransmitEffect);
+
+        entity.MarkEffectsStateChanged();
     }
 
     private bool HasClassAbility(PlayerState state, AbilityType type)
@@ -967,6 +1244,9 @@ public class ZombieRoundManager
             : $"{prefix} Zombies win. {reason}";
 
         BroadcastChat(message);
+        if (!humansWon)
+            EmitSoundFromRandomAliveZombie(_config.SoundConfig.ZombiesWinSound);
+
         BroadcastCenterHtml(humansWon
             ? "<font color='#7fd7ff'>HUMANS WIN</font>"
             : "<font color='#ff3d3d'>ZOMBIES WIN</font>", 5);
@@ -976,10 +1256,95 @@ public class ZombieRoundManager
             await Task.Delay(TimeSpan.FromSeconds(_config.GeneralConfig.PostRoundDelaySeconds));
             Server.NextFrame(() =>
             {
-                if (Volatile.Read(ref _lifecycleId) == restartLifecycleId && _phase == RoundPhase.Ended)
+                if (Volatile.Read(ref _lifecycleId) != restartLifecycleId || _phase != RoundPhase.Ended)
+                    return;
+
+                if (TryRotateWorkshopMap())
+                    return;
+
+                if (_phase == RoundPhase.Ended)
                     StartRoundLifecycle();
             });
         });
+    }
+
+    private bool TryRotateWorkshopMap()
+    {
+        if (!_config.GeneralConfig.RotateWorkshopMaps)
+            return false;
+
+        var mapNames = GetConfiguredWorkshopMapNames();
+        if (mapNames.Length == 0)
+            return false;
+
+        _completedRoundsOnCurrentWorkshopMap++;
+
+        var roundsPerMap = Math.Max(1, _config.GeneralConfig.RoundsPerWorkshopMap);
+        if (_completedRoundsOnCurrentWorkshopMap < roundsPerMap)
+            return false;
+
+        _completedRoundsOnCurrentWorkshopMap = 0;
+
+        var nextIndex = _currentWorkshopMapIndex < 0
+            ? 0
+            : (_currentWorkshopMapIndex + 1) % mapNames.Length;
+        var nextMapName = mapNames[nextIndex];
+        _currentWorkshopMapIndex = nextIndex;
+        ApplyWorkshopAddonOrder(nextIndex);
+
+        BroadcastChat($"{_config.ChatConfig.ZombiePrefix} Loading next map: {nextMapName}");
+        Console.WriteLine($"[ZombieMod] Loading map {nextMapName} from configured workshop rotation.");
+        Server.ExecuteCommand($"map {nextMapName}");
+
+        return true;
+    }
+
+    private void ApplyWorkshopAddonOrder(int activeMapIndex)
+    {
+        var addonIds = GetWorkshopAddonIdsForMapIndex(activeMapIndex);
+        if (addonIds.Length == 0)
+            return;
+
+        var addonList = string.Join(",", addonIds);
+        Server.ExecuteCommand($"mm_extra_addons \"{addonList}\"");
+        Server.ExecuteCommand($"mm_client_extra_addons \"{addonList}\"");
+        Server.ExecuteCommand("mm_cache_clients_with_addons 0");
+    }
+
+    private string[] GetWorkshopAddonIdsForMapIndex(int activeMapIndex)
+    {
+        var orderedIds = new List<string>();
+        var mapIds = _config.GeneralConfig.WorkshopMapIds ?? [];
+
+        if (activeMapIndex >= 0 && activeMapIndex < mapIds.Length)
+            AddWorkshopAddonId(orderedIds, mapIds[activeMapIndex]);
+
+        foreach (var addonId in _config.GeneralConfig.WorkshopAddonIds ?? [])
+            AddWorkshopAddonId(orderedIds, addonId);
+
+        foreach (var addonId in mapIds)
+            AddWorkshopAddonId(orderedIds, addonId);
+
+        return orderedIds.ToArray();
+    }
+
+    private static void AddWorkshopAddonId(List<string> addonIds, string? addonId)
+    {
+        if (string.IsNullOrWhiteSpace(addonId))
+            return;
+
+        var trimmedAddonId = addonId.Trim();
+        if (!addonIds.Contains(trimmedAddonId, StringComparer.Ordinal))
+            addonIds.Add(trimmedAddonId);
+    }
+
+    private string[] GetConfiguredWorkshopMapNames()
+    {
+        return (_config.GeneralConfig.WorkshopMapNames ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private void ShowWaitingHud(int connectedPlayers)
@@ -1116,6 +1481,49 @@ public class ZombieRoundManager
     {
         foreach (var player in GetConnectedPlayers())
             player.PrintToCenterAlert(message);
+    }
+
+    private void EmitPlayerSound(CCSPlayerController player, string? soundEventName)
+    {
+        var pawn = player.PlayerPawn.Value;
+        ZombieSounds.Emit(pawn, _config, soundEventName);
+    }
+
+    private void TryEmitZombiePain(CCSPlayerController zombie, PlayerState state)
+    {
+        var now = DateTime.UtcNow;
+        if (now < state.NextZombiePainSoundAtUtc)
+            return;
+
+        EmitPlayerSound(zombie, _config.SoundConfig.ZombiePainSound);
+        state.NextZombiePainSoundAtUtc = now.AddSeconds(Math.Max(0.1f, _config.SoundConfig.ZombiePainMinIntervalSeconds));
+    }
+
+    private void TryEmitZombieIdleSound(DateTime now)
+    {
+        if (_phase != RoundPhase.Active || now < _nextZombieIdleSoundAtUtc)
+            return;
+
+        EmitSoundFromRandomAliveZombie(_config.SoundConfig.ZombieIdleSound);
+        ScheduleNextZombieIdleSound();
+    }
+
+    private void EmitSoundFromRandomAliveZombie(string? soundEventName)
+    {
+        var zombies = GetAlivePlayers()
+            .Where(player => player.GetState(_playerStates).IsZombie)
+            .ToList();
+
+        if (zombies.Count == 0)
+            return;
+
+        EmitPlayerSound(zombies[_random.Next(zombies.Count)], soundEventName);
+    }
+
+    private void ScheduleNextZombieIdleSound()
+    {
+        var interval = Math.Max(4.0f, _config.SoundConfig.ZombieIdleIntervalSeconds);
+        _nextZombieIdleSoundAtUtc = DateTime.UtcNow.AddSeconds(interval + _random.NextDouble() * Math.Min(interval, 6.0f));
     }
 
     private void CancelRoundLifecycle()

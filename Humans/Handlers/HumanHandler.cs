@@ -23,7 +23,9 @@ public class HumanHandler
         if (!player.IsValid)
             return;
 
-        var humanClass = playerState.SelectedHumanClass ?? GetDefaultHumanClass();
+        var humanClass = playerState.SelectedHumanClass
+            ?? playerState.PreferredHumanClass
+            ?? GetDefaultHumanClass();
         playerState.SelectedHumanClass = humanClass;
         playerState.ResetRoleRuntimeState();
 
@@ -88,7 +90,9 @@ public class HumanHandler
 
     public void EnforceHumanAppearance(CCSPlayerController player, PlayerState playerState)
     {
-        var humanClass = playerState.SelectedHumanClass ?? GetDefaultHumanClass();
+        var humanClass = playerState.SelectedHumanClass
+            ?? playerState.PreferredHumanClass
+            ?? GetDefaultHumanClass();
         playerState.SelectedHumanClass = humanClass;
         ApplyHumanLoadout(player, humanClass, _config, resetHealth: false);
     }

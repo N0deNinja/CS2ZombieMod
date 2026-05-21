@@ -1,4 +1,5 @@
 using ZombieModPlugin.Abilities.Utils;
+using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -26,6 +27,7 @@ public class SpeedBoostExecutor : Ability
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.SpeedBoost, config.DurationSeconds, context.PlayerState);
         context.PlayerState.SetCooldown(AbilityType.SpeedBoost, config.CooldownSeconds);
+        ZombieSounds.Emit(playerPawn, context.Config, config.ActivationSound);
 
         AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
     }

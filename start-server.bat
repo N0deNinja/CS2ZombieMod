@@ -12,14 +12,21 @@ set "SERVER_CFG_SOURCE=%ROOT%server-config\zombiemod_server.cfg"
 set "SERVER_CFG_TARGET=%SERVER_DIR%\game\csgo\cfg\zombiemod_server.cfg"
 set "GAMEMODE_CFG_SOURCE=%ROOT%server-config\gamemode_casual_server.cfg"
 set "GAMEMODE_CFG_TARGET=%SERVER_DIR%\game\csgo\cfg\gamemode_casual_server.cfg"
+set "MULTIADDON_CFG_SOURCE=%ROOT%server-config\multiaddonmanager.cfg"
+set "MULTIADDON_CFG_TARGET=%SERVER_DIR%\game\csgo\cfg\multiaddonmanager\multiaddonmanager.cfg"
+set "MAP_INSTALLER=%ROOT%tools\install-workshop-maps.ps1"
 set "CS2_EXE=%GAME_BIN_DIR%\cs2.exe"
 set "PORT=%CS2_PORT%"
 set "MAP=%CS2_MAP%"
+set "WORKSHOP_MAP=%CS2_WORKSHOP_MAP%"
+set "WORKSHOP_BOOTSTRAP_MAP=%CS2_WORKSHOP_BOOTSTRAP_MAP%"
 set "LAN_ARGS=+sv_lan 1"
 set "TOKEN_ARGS="
+set "MAP_ARGS="
 
 if "%PORT%"=="" set "PORT=27015"
-if "%MAP%"=="" set "MAP=de_dust2"
+if "%MAP%"=="" if "%WORKSHOP_MAP%"=="" set "MAP=zm_liquid_anomaly_s"
+if "%WORKSHOP_BOOTSTRAP_MAP%"=="" set "WORKSHOP_BOOTSTRAP_MAP=de_dust2"
 
 if not exist "%CS2_EXE%" (
     echo [error] CS2 server executable was not found: "%CS2_EXE%"
@@ -55,6 +62,11 @@ if not exist "%GAMEMODE_CFG_SOURCE%" (
     exit /b 1
 )
 
+if not exist "%MULTIADDON_CFG_SOURCE%" (
+    echo [error] MultiAddonManager config was not found: "%MULTIADDON_CFG_SOURCE%"
+    exit /b 1
+)
+
 echo [start] Installing Zombie Mod server config...
 copy /Y "%SERVER_CFG_SOURCE%" "%SERVER_CFG_TARGET%" >nul
 if errorlevel 1 (
@@ -72,6 +84,27 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if not exist "%SERVER_DIR%\game\csgo\cfg\multiaddonmanager" (
+    mkdir "%SERVER_DIR%\game\csgo\cfg\multiaddonmanager"
+)
+
+copy /Y "%MULTIADDON_CFG_SOURCE%" "%MULTIADDON_CFG_TARGET%" >nul
+if errorlevel 1 (
+    echo [error] Failed to copy MultiAddonManager config to "%MULTIADDON_CFG_TARGET%"
+    pause
+    exit /b 1
+)
+
+if exist "%MAP_INSTALLER%" (
+    echo [start] Installing extracted workshop map files...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MAP_INSTALLER%" -Root "%ROOT%."
+    if errorlevel 1 (
+        echo [error] Failed to install workshop map files.
+        pause
+        exit /b 1
+    )
+)
+
 if not "%CS2_GSLT%"=="" (
     set "LAN_ARGS=+sv_lan 0"
     set "TOKEN_ARGS=+sv_setsteamaccount %CS2_GSLT%"
@@ -81,12 +114,19 @@ if not "%CS2_GSLT%"=="" (
 )
 
 echo [start] Port: %PORT%
-echo [start] Map: %MAP%
+if not "%WORKSHOP_MAP%"=="" (
+    set "MAP_ARGS=+map %WORKSHOP_BOOTSTRAP_MAP% +host_workshop_map %WORKSHOP_MAP%"
+    echo [start] Bootstrap map: %WORKSHOP_BOOTSTRAP_MAP%
+    echo [start] Workshop map ID: %WORKSHOP_MAP%
+) else (
+    set "MAP_ARGS=+map %MAP%"
+    echo [start] Map: %MAP%
+)
 echo [start] Connect from CS2 console with: connect 127.0.0.1:%PORT%
 echo.
 
 pushd "%GAME_BIN_DIR%"
-"%CS2_EXE%" -dedicated -console -usercon -insecure -condebug -port %PORT% %LAN_ARGS% %TOKEN_ARGS% +game_type 0 +game_mode 0 +exec zombiemod_server.cfg +mp_do_warmup_period 0 +mp_warmuptime 0 +mp_warmup_end +mp_freezetime 0 +mp_round_restart_delay 0 +mp_roundtime 5.25 +mp_roundtime_defuse 5.25 +mp_roundtime_hostage 5.25 +mp_ignore_round_win_conditions 1 +mp_timelimit 0 +mp_teammates_are_enemies 0 +mp_friendlyfire 0 +mp_autoteambalance 0 +mp_limitteams 0 +mp_solid_teammates 0 +mp_buytime 0 +mp_buy_anywhere 0 +mp_t_default_primary "" +mp_t_default_secondary "" +mp_t_default_melee weapon_knife +mp_ct_default_primary "" +mp_ct_default_secondary weapon_usp_silencer +mp_ct_default_melee weapon_knife +mp_death_drop_gun 0 +mp_death_drop_grenade 0 +mp_death_drop_defuser 0 +bot_quota 0 +bot_kick +bot_stop 0 +bot_dont_shoot 0 +mp_randomspawn 1 +mp_randomspawn_los 0 +map %MAP%
+"%CS2_EXE%" -dedicated -console -usercon -insecure -condebug -port %PORT% %LAN_ARGS% %TOKEN_ARGS% +game_type 0 +game_mode 0 +exec zombiemod_server.cfg +sv_cheats 1 +mp_do_warmup_period 0 +mp_warmuptime 0 +mp_warmup_end +mp_freezetime 0 +mp_round_restart_delay 0 +mp_roundtime 5.25 +mp_roundtime_defuse 5.25 +mp_roundtime_hostage 5.25 +mp_ignore_round_win_conditions 1 +mp_timelimit 0 +mp_teammates_are_enemies 0 +mp_friendlyfire 0 +mp_autoteambalance 0 +mp_limitteams 0 +mp_solid_teammates 0 +mp_buytime 0 +mp_buy_anywhere 0 +mp_t_default_primary "" +mp_t_default_secondary "" +mp_t_default_melee weapon_knife +mp_ct_default_primary "" +mp_ct_default_secondary weapon_usp_silencer +mp_ct_default_melee weapon_knife +mp_death_drop_gun 0 +mp_death_drop_grenade 0 +mp_death_drop_defuser 0 +bot_quota 0 +bot_kick +bot_stop 0 +bot_dont_shoot 0 +mp_randomspawn 1 +mp_randomspawn_los 0 +sv_airaccelerate 100 %MAP_ARGS%
 set "EXIT_CODE=%ERRORLEVEL%"
 popd
 

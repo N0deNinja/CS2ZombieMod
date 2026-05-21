@@ -1,5 +1,6 @@
 using ZombieModPlugin.Abilities.Utils;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -28,6 +29,7 @@ public class CultistHexExecutor : Ability
         var speedMultiplier = Math.Clamp(config.HumanSpeedMultiplier, 0.1f, 1.0f);
         var knockbackMultiplier = Math.Clamp(config.KnockbackMultiplier, 0.1f, 1.0f);
         var affected = 0;
+        ZombieSounds.Emit(pawn, context.Config, config.ActivationSound);
 
         foreach (var target in player.GetPlayersInProximity(context.AllPlayers, radius))
         {

@@ -4,6 +4,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API;
 using System.Drawing;
+using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -29,6 +30,7 @@ public class SelfDestructExecutor : Ability
         var origin = pawn.AbsOrigin;
         var config = context.Config.AbilityConfig.SelfDestruct;
 
+        ZombieSounds.Emit(pawn, context.Config, config.ActivationSound);
         pawn.EmitSound("tr.C4Explode");
 
         var explosion = Utilities.CreateEntityByName<CEnvExplosion>("env_explosion");

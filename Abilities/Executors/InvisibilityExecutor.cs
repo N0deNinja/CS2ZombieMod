@@ -1,5 +1,6 @@
 using System.Drawing;
 using ZombieModPlugin.Abilities.Utils;
+using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
 
@@ -26,6 +27,7 @@ public class InvisibilityExecutor : Ability
 
         var config = context.Config.AbilityConfig.Invisibility;
         var alpha = Math.Clamp(config.Alpha, 0, 255);
+        ZombieSounds.Emit(pawn, context.Config, config.ActivationSound);
 
         AbilityUtils.RunTimedEffect(
             player,

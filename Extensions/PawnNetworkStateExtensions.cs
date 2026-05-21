@@ -20,6 +20,14 @@ public static class PawnNetworkStateExtensions
     public static void MarkRenderStateChanged(this CBaseEntity entity)
     {
         MarkStateChanged(entity, "CBaseModelEntity", "m_clrRender");
+        MarkStateChanged(entity, "CBaseModelEntity", "m_nRenderMode");
+        MarkStateChanged(entity, "CBaseModelEntity", "m_nRenderFX");
+        MarkEffectsStateChanged(entity);
+    }
+
+    public static void MarkEffectsStateChanged(this CBaseEntity entity)
+    {
+        MarkStateChanged(entity, "CBaseEntity", "m_fEffects");
     }
 
     public static void MarkTeamStateChanged(this CBaseEntity entity)

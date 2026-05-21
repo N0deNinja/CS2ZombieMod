@@ -12,6 +12,7 @@ public class BaseConfig : BasePluginConfig
     public AbilityConfig AbilityConfig { get; set; } = new();
     public GeneralConfig GeneralConfig { get; set; } = new();
     public AdminTestConfig AdminTestConfig { get; set; } = new();
+    public SoundConfig SoundConfig { get; set; } = new();
     public ChatConfig ChatConfig { get; set; } = new();
     public CommandsConfig CommandsConfig { get; set; } = new();
     public MessagesConfig MessagesConfig { get; set; } = new();
@@ -31,8 +32,13 @@ public class GeneralConfig
     public bool RandomizePlayerSpawns { get; set; } = true;
     public float SpawnScatterDelaySeconds { get; set; } = 0.3f;
     public bool IncludeBotsInRound { get; set; } = false;
+    public float AirAccelerate { get; set; } = 100f;
     public bool AutoDownloadWorkshopAddons { get; set; } = true;
     public string[] WorkshopAddonIds { get; set; } = ["3170427476"];
+    public bool RotateWorkshopMaps { get; set; } = false;
+    public int RoundsPerWorkshopMap { get; set; } = 5;
+    public string[] WorkshopMapIds { get; set; } = ["3685437201", "3222984182", "3283778158"];
+    public string[] WorkshopMapNames { get; set; } = ["zm_liquid_anomaly_s", "zm_silent_village", "zm_mediumzm"];
 }
 
 public class AdminTestConfig
@@ -49,12 +55,34 @@ public class AdminTestConfig
     public int DefaultBotCount { get; set; } = 3;
 }
 
+public class SoundConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string[] Resources { get; set; } = ["soundevents/soundevents_zr.vsndevts"];
+    public string FirstInfectionSound { get; set; } = "zr.amb.scream";
+    public string InfectionSound { get; set; } = "zr.amb.scream";
+    public string InfectionHitSound { get; set; } = "zr.amb.zombie_voice_idle";
+    public string ZombiePainSound { get; set; } = "zr.amb.zombie_pain";
+    public string ZombieDeathSound { get; set; } = "zr.amb.zombie_die";
+    public string ZombieIdleSound { get; set; } = "zr.amb.zombie_voice_idle";
+    public string ZombiesWinSound { get; set; } = "zr.amb.scream";
+    public float ZombiePainMinIntervalSeconds { get; set; } = 1.2f;
+    public float ZombieIdleIntervalSeconds { get; set; } = 14f;
+}
+
 public class CommandsConfig
 {
+    public string Help { get; set; } = "help";
+    public string XP { get; set; } = "xp";
     public string Shop { get; set; } = "shop";
     public string Abilities { get; set; } = "abilities";
     public string Level { get; set; } = "level";
+    public string Zombies { get; set; } = "zombies";
     public string SwitchZombie { get; set; } = "zombie";
+    public string DefaultZombie { get; set; } = "zdefault";
+    public string Humans { get; set; } = "humans";
+    public string SwitchHuman { get; set; } = "human";
+    public string DefaultHuman { get; set; } = "hdefault";
 }
 
 public class ChatConfig
@@ -198,7 +226,7 @@ public class ZombieConfig
             Gravity = 0.75f,
             PlayerModel = "characters/models/kolka/2025/lurker/lurker.vmdl",
             DefaultAbilities = [AbilityType.LurkerCloak, AbilityType.Pounce],
-            UnlockableAbilities = [AbilityType.MultiJump, AbilityType.Invisibility]
+            UnlockableAbilities = [AbilityType.Invisibility, AbilityType.SpeedBoost]
         }
     };
 
@@ -222,6 +250,10 @@ public class HumanConfig
     public float ZombieKnockbackForce { get; set; } = 420f;
     public float ZombieKnockbackUpForce { get; set; } = 90f;
     public int InfectionHitsRequired { get; set; } = 3;
+    public int StartingLevel { get; set; } = 1;
+    public int MaxLevel { get; set; } = 5;
+    public int XPPerKill { get; set; } = 15;
+    public int XPPerLevel { get; set; } = 100;
 
     public HumanClass[] HumanClasses { get; set; } =
     [
@@ -328,6 +360,7 @@ public class AbilitySettingsConfig
     public float CooldownSeconds { get; set; } = 10f;
     public float DurationSeconds { get; set; } = 5f;
     public int UnlockCost { get; set; } = 100;
+    public string ActivationSound { get; set; } = "";
 }
 
 public class PounceAbilityConfig : AbilitySettingsConfig
@@ -337,6 +370,7 @@ public class PounceAbilityConfig : AbilitySettingsConfig
         CooldownSeconds = 8f;
         DurationSeconds = 0.1f;
         UnlockCost = 400;
+        ActivationSound = "zr.amb.scream";
     }
 
     public float Force { get; set; } = 700f;
@@ -345,6 +379,11 @@ public class PounceAbilityConfig : AbilitySettingsConfig
 
 public class SpeedBoostAbilityConfig : AbilitySettingsConfig
 {
+    public SpeedBoostAbilityConfig()
+    {
+        ActivationSound = "zr.amb.zombie_voice_idle";
+    }
+
     public float SpeedMultiplier { get; set; } = 1.5f;
 }
 
@@ -355,6 +394,7 @@ public class InvisibilityAbilityConfig : AbilitySettingsConfig
         CooldownSeconds = 20f;
         DurationSeconds = 6f;
         UnlockCost = 500;
+        ActivationSound = "zr.amb.zombie_voice_idle";
     }
 
     public int Alpha { get; set; } = 60;
@@ -362,12 +402,22 @@ public class InvisibilityAbilityConfig : AbilitySettingsConfig
 
 public class HealthRegenAbilityConfig : AbilitySettingsConfig
 {
+    public HealthRegenAbilityConfig()
+    {
+        ActivationSound = "zr.amb.zombie_voice_idle";
+    }
+
     public int HealPerTick { get; set; } = 20;
     public float TickIntervalSeconds { get; set; } = 1f;
 }
 
 public class BerserkAbilityConfig : AbilitySettingsConfig
 {
+    public BerserkAbilityConfig()
+    {
+        ActivationSound = "zr.amb.scream";
+    }
+
     public float SpeedMultiplier { get; set; } = 1.5f;
 }
 
@@ -378,6 +428,7 @@ public class SelfDestructAbilityConfig : AbilitySettingsConfig
         CooldownSeconds = 20f;
         DurationSeconds = 0.1f;
         UnlockCost = 300;
+        ActivationSound = "zr.amb.scream";
     }
 
     public float Radius { get; set; } = 400f;
@@ -394,10 +445,23 @@ public class FrostBoltAbilityConfig : AbilitySettingsConfig
         UnlockCost = 350;
     }
 
-    public float Speed { get; set; } = 1200f;
-    public float Range { get; set; } = 1200f;
+    public float Speed { get; set; } = 1350f;
+    public float Range { get; set; } = 1400f;
+    public float HitRadius { get; set; } = 38f;
+    public float SpawnForwardOffset { get; set; } = 42f;
+    public float SpawnUpOffset { get; set; } = 54f;
+    public float TickIntervalSeconds { get; set; } = 0.025f;
+    public float HitParticleLifetimeSeconds { get; set; } = 1.5f;
+    public float BeamWidth { get; set; } = 3f;
+    public float BeamLifetimeSeconds { get; set; } = 0.12f;
     public float AimConeDot { get; set; } = 0.82f;
     public float SlowMultiplier { get; set; } = 0.55f;
+    public string CastParticle { get; set; } = "particles/weapons/cs_weapon_fx/weapon_muzzle_flash_taser.vpcf";
+    public string ProjectileParticle { get; set; } = "particles/weapons/cs_weapon_fx/weapon_taser_glow.vpcf";
+    public string HitParticle { get; set; } = "particles/weapons/cs_weapon_fx/weapon_taser_glow_impact.vpcf";
+    public string BeamMaterial { get; set; } = "materials/sprites/laserbeam.vtex";
+    public string CastSound { get; set; } = "zr.amb.scream";
+    public string HitSound { get; set; } = "zr.amb.zombie_pain";
     public string HitMessage { get; set; } = "You were chilled by Frost Bolt.";
 }
 
@@ -408,6 +472,7 @@ public class CultistHexAbilityConfig : AbilitySettingsConfig
         CooldownSeconds = 18f;
         DurationSeconds = 4f;
         UnlockCost = 450;
+        ActivationSound = "zr.amb.zombie_voice_idle";
     }
 
     public float Radius { get; set; } = 450f;
@@ -439,10 +504,14 @@ public class LurkerCloakAbilityConfig : AbilitySettingsConfig
         UnlockCost = 300;
     }
 
-    public float StationaryDelaySeconds { get; set; } = 2.0f;
+    public float StationaryDelaySeconds { get; set; } = 0.6f;
+    public float FadeInSeconds { get; set; } = 0.9f;
+    public float FadeOutSeconds { get; set; } = 0.25f;
     public float MovementThreshold { get; set; } = 12f;
-    public float TickIntervalSeconds { get; set; } = 0.2f;
+    public float TickIntervalSeconds { get; set; } = 0.03f;
     public int Alpha { get; set; } = 45;
+    public bool ApplyToWeapons { get; set; } = true;
+    public bool ApplyToViewModel { get; set; } = true;
 }
 
 

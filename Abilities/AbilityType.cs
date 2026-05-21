@@ -21,7 +21,7 @@ public enum AbilityType
     EMPPulse,             // Disables enemy HUD/crosshair (simulate with overlays)
     VenomBite,            // Poison effect over time (DOT)
     ShadowStep,           // Short teleport forward (based on aim direction)
-    FrostBolt,            // Chills the aimed human and slows movement
+    FrostBolt,            // Launches an icy projectile that slows on hit
     CultistHex,           // Weakens nearby humans for a short duration
     MultiJump,            // Passive extra air jumps
     LurkerCloak,          // Passive camouflage while standing still
