@@ -3,6 +3,7 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.Shops;
 using ZombieModPlugin.States;
@@ -109,7 +110,7 @@ public sealed class HumanShopCommandHandler
 
         _progressionService.SyncNativeMoney(player!, state, save: true);
         _progressionService.ApplyInGameMoney(player!, state, save: true);
-        Reply(command, $"Money: {ChatColors.Lime}${state.Money}{ChatColors.Default} ({ChatColors.Default}persistent{ChatColors.Default}). Earn it as a human, spend it in {ChatColors.Lime}!weapons{ChatColors.Default}.");
+        Reply(command, $"Money: {ChatText.Money(state.Money)} ({ChatColors.Gold}persistent{ChatColors.Default}). Earn it as a human, spend it in {ChatText.Command("!weapons")}.");
     }
 
     private bool TryGetPlayerState(
@@ -130,12 +131,12 @@ public sealed class HumanShopCommandHandler
 
     private static void Reply(CommandInfo command, string message)
     {
-        command.ReplyToCommand($"{ChatColors.LightPurple}[ZM]{ChatColors.Default} {message}");
+        command.ReplyToCommand(ChatText.Info(message));
     }
 
     private static void ReplyError(CommandInfo command, string message)
     {
-        command.ReplyToCommand($"{ChatColors.Red}[ZM]{ChatColors.Default} {message}");
+        command.ReplyToCommand(ChatText.Error(message));
     }
 
     private static string NormalizeCommandName(string configuredCommand, string fallback)

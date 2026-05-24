@@ -7,6 +7,7 @@ rem CounterStrikeSharp plugin folder.
 set "ROOT=%~dp0"
 set "SERVER_DIR=%ROOT%server"
 set "CSS_PLUGINS_DIR=%SERVER_DIR%\game\csgo\addons\counterstrikesharp\plugins"
+set "LOCAL_WORKSHOP_ADDON=%ProgramFiles(x86)%\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo_addons\invisible_knife"
 set "CONFIGURATION=%BUILD_CONFIGURATION%"
 
 if "%CONFIGURATION%"=="" set "CONFIGURATION=Debug"
@@ -84,10 +85,26 @@ echo.
 echo [deploy] Copying plugin output to:
 echo [deploy] "%TARGET_DIR%"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
-robocopy "%OUTPUT_DIR%" "%TARGET_DIR%" /E /PURGE /XF "*.xml" >nul
+robocopy "%OUTPUT_DIR%" "%TARGET_DIR%" /E /PURGE /XD "data" /XF "*.xml" "*.db" "*.db-shm" "*.db-wal" >nul
 if %ERRORLEVEL% GEQ 8 (
     echo [error] Failed to copy plugin files. Robocopy exit code: %ERRORLEVEL%
     exit /b 1
+)
+
+if exist "%LOCAL_WORKSHOP_ADDON%\sounds" (
+    echo [deploy] Copying local invisible_knife sound assets...
+    if not exist "%SERVER_DIR%\game\csgo\sounds" mkdir "%SERVER_DIR%\game\csgo\sounds"
+    if not exist "%SERVER_DIR%\game\csgo\soundevents" mkdir "%SERVER_DIR%\game\csgo\soundevents"
+    copy /Y "%LOCAL_WORKSHOP_ADDON%\sounds\*.vsnd_c" "%SERVER_DIR%\game\csgo\sounds\" >nul
+    if errorlevel 1 (
+        echo [error] Failed to copy local invisible_knife sound files.
+        exit /b 1
+    )
+    copy /Y "%LOCAL_WORKSHOP_ADDON%\soundevents\*.vsndevts_c" "%SERVER_DIR%\game\csgo\soundevents\" >nul
+    if errorlevel 1 (
+        echo [error] Failed to copy local invisible_knife soundevent files.
+        exit /b 1
+    )
 )
 
 echo [deploy] Deploy complete.

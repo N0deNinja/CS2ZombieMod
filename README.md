@@ -34,6 +34,24 @@ server/game/csgo/addons/counterstrikesharp/plugins/ZombieModPlugin/
 Set `BUILD_CONFIGURATION=Release` before running the script if you want to deploy
 the release build instead of the default debug build.
 
+To build Release, refresh the local plugin folder, and copy it to the Ubuntu
+server over SSH, run:
+
+```bat
+build-and-deploy-ssh.bat
+```
+
+The SSH deploy script defaults to:
+
+```text
+root@178.105.156.187:/root/server/game/csgo/addons/counterstrikesharp/plugins/
+```
+
+Override defaults with `ZM_SSH_KEY`, `ZM_SSH_USER`, `ZM_SSH_HOST`,
+`ZM_REMOTE_PLUGINS_DIR`, or use `ZM_DEPLOY_DRY_RUN=1` to test without copying.
+The deploy scripts preserve plugin SQLite data by excluding `data/` and
+`*.db`, `*.db-wal`, `*.db-shm` files from replacement.
+
 ### 3. Start the local server
 
 ```bat
@@ -317,7 +335,7 @@ countdown, and then infects a configurable number of random players.
 Important config values live under `GeneralConfig`:
 
 ```text
-FirstInfectionDelaySeconds = 15
+FirstInfectionDelaySeconds = 14
 MinimumPlayersToStart = 2
 RoundDurationSeconds = 300
 ActiveHudIntervalSeconds = 1

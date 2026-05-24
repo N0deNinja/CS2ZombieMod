@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Modules.Extensions;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Drawing;
 using ZombieModPlugin.Progression.Services;
@@ -41,7 +42,7 @@ public class ZombieHandler
         playerState.SelectedHumanClass = null;
         playerState.ResetRoleRuntimeState();
 
-        player.PrintToChat($"{_config.ChatConfig.ZombiePrefix} You are now a {zombie.Name}!");
+        player.PrintToChat(ChatText.Zombie($"You are now a {ChatColors.Gold}{zombie.Name}{ChatColors.Default}!"));
         Console.WriteLine($"[ZombieMod] {player.PlayerName} transformed into a zombie ({zombie.Name}).");
 
         Server.NextFrame(() =>

@@ -27,7 +27,7 @@ public class BerserkExecutor : Ability
         var speedMultiplier = Math.Clamp(config.SpeedMultiplier, 0.1f, 4.0f);
 
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.Berserk, config.DurationSeconds, state);
-        AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
+        AbilityUtils.ApplySpeedBoost(player, state, speedMultiplier, config.DurationSeconds);
         ZombieSounds.EmitAbilityActivation(player, context.Config, config);
 
         context.PlayerState.SetCooldown(AbilityType.Berserk, config.CooldownSeconds);

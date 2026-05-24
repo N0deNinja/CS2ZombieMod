@@ -4,6 +4,7 @@ using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Humans.Models;
 using ZombieModPlugin.Progression.Models;
 using ZombieModPlugin.Progression.Persistence;
@@ -163,12 +164,9 @@ public sealed class ProgressionService
         EnsureRuntimeDefaults(state);
 
         var money = GetNativeMoneyForBalance(state.Money);
-        if (player.InGameMoneyServices != null)
-        {
-            player.InGameMoneyServices.Account = money;
-            player.InGameMoneyServices.StartAccount = money;
-            state.LastAppliedNativeMoney = money;
-        }
+        TryRequestNativeMoneyHud(player, state);
+        WriteNativeMoney(player, state, money);
+        QueueNativeMoneyRefresh(player, state, money);
 
         if (save)
             SavePlayerFireAndForget(player, state);
@@ -181,7 +179,29 @@ public sealed class ProgressionService
             return false;
 
         var currentNativeMoney = Math.Clamp(player.InGameMoneyServices.Account, 0, GetNativeMoneyDisplayCap());
-        var expectedNativeMoney = Math.Clamp(state.LastAppliedNativeMoney, 0, GetNativeMoneyDisplayCap());
+        var expectedNativeMoney = Math.Clamp(
+            state.LastAppliedNativeMoney > 0
+                ? state.LastAppliedNativeMoney
+                : GetNativeMoneyForBalance(state.Money),
+            0,
+            GetNativeMoneyDisplayCap());
+
+        if (!state.NativeMoneySyncReady)
+        {
+            if (currentNativeMoney == expectedNativeMoney)
+                state.NativeMoneySyncReady = true;
+            else
+                WriteNativeMoney(player, state, expectedNativeMoney);
+
+            return false;
+        }
+
+        if (currentNativeMoney == 0 && expectedNativeMoney > 0)
+        {
+            state.NativeMoneySyncReady = false;
+            WriteNativeMoney(player, state, expectedNativeMoney);
+            return false;
+        }
 
         if (currentNativeMoney >= expectedNativeMoney)
         {
@@ -192,7 +212,7 @@ public sealed class ProgressionService
         var spent = expectedNativeMoney - currentNativeMoney;
         state.Money = Math.Max(0, state.Money - spent);
         ApplyInGameMoney(player, state, save);
-        player.PrintToChat($"{ChatColors.LightPurple}[ZM]{ChatColors.Default} Spent {ChatColors.Gold}${spent}{ChatColors.Default}. Balance: {ChatColors.Lime}${state.Money}{ChatColors.Default}.");
+        player.PrintToChat($"{ChatText.MoneyPrefix} Spent {ChatColors.Gold}${spent}{ChatColors.Default}. Balance: {ChatText.Money(state.Money)}.");
         return true;
     }
 
@@ -221,8 +241,16 @@ public sealed class ProgressionService
 
     public bool AwardHumanMoney(CCSPlayerController player, PlayerState state, int amount, string reason)
     {
+        if (state.IsZombie)
+            return false;
+
+        return AwardMoney(player, state, amount, reason);
+    }
+
+    public bool AwardMoney(CCSPlayerController player, PlayerState state, int amount, string reason)
+    {
         EnsureRuntimeDefaults(state);
-        if (amount <= 0 || state.IsZombie)
+        if (amount <= 0)
             return false;
 
         state.Money = checked((int)Math.Min(int.MaxValue, (long)state.Money + amount));
@@ -378,35 +406,46 @@ public sealed class ProgressionService
     {
         EnsureRuntimeDefaults(state);
 
-        if (!IsClassUnlocked(state, role, classId))
-        {
-            return new UnlockAttemptResult
-            {
-                Success = false,
-                Message = $"Locked. Requirements: {FormatClassRequirements(state, role, classId)}"
-            };
-        }
-
         if (role == ProgressionClassRole.Zombie)
         {
             var zombie = FindZombie(classId);
             if (zombie == null)
                 return new UnlockAttemptResult { Success = false, Message = $"Unknown zombie class: {classId}" };
 
+            var autoUnlocked = EnsureClassUnlockedIfReady(state, role, zombie.Id, out var lockMessage);
+            if (!autoUnlocked && !IsClassUnlocked(state, role, zombie.Id))
+                return new UnlockAttemptResult { Success = false, Message = lockMessage };
+
             state.PreferredZombieType = zombie;
             GetZombieProgression(state, zombie.Id);
             SavePlayerFireAndForget(player, state);
-            return new UnlockAttemptResult { Success = true, Message = $"Default zombie set to {zombie.Name}." };
+            return new UnlockAttemptResult
+            {
+                Success = true,
+                Message = autoUnlocked
+                    ? $"Unlocked {zombie.Name} and set it as your default zombie."
+                    : $"Default zombie set to {zombie.Name}."
+            };
         }
 
         var human = FindHuman(classId);
         if (human == null)
             return new UnlockAttemptResult { Success = false, Message = $"Unknown human class: {classId}" };
 
+        var humanAutoUnlocked = EnsureClassUnlockedIfReady(state, role, human.Id, out var humanLockMessage);
+        if (!humanAutoUnlocked && !IsClassUnlocked(state, role, human.Id))
+            return new UnlockAttemptResult { Success = false, Message = humanLockMessage };
+
         state.PreferredHumanClass = human;
         GetHumanProgression(state, human.Id);
         SavePlayerFireAndForget(player, state);
-        return new UnlockAttemptResult { Success = true, Message = $"Default human set to {human.Name}." };
+        return new UnlockAttemptResult
+        {
+            Success = true,
+            Message = humanAutoUnlocked
+                ? $"Unlocked {human.Name} and set it as your default human."
+                : $"Default human set to {human.Name}."
+        };
     }
 
     public UnlockAttemptResult TryUnlockClass(
@@ -417,17 +456,17 @@ public sealed class ProgressionService
     {
         EnsureRuntimeDefaults(state);
 
-        if (IsClassUnlocked(state, role, classId))
-            return new UnlockAttemptResult { Success = false, Message = "Class is already unlocked." };
+        var resolvedClassId = role == ProgressionClassRole.Zombie
+            ? FindZombie(classId)?.Id
+            : FindHuman(classId)?.Id;
 
-        var exists = role == ProgressionClassRole.Zombie
-            ? FindZombie(classId) != null
-            : FindHuman(classId) != null;
-
-        if (!exists)
+        if (resolvedClassId == null)
             return new UnlockAttemptResult { Success = false, Message = $"Unknown class: {classId}" };
 
-        var definition = _unlockService.GetClassUnlockDefinition(role, classId);
+        if (IsClassUnlocked(state, role, resolvedClassId))
+            return new UnlockAttemptResult { Success = false, Message = "Class is already unlocked." };
+
+        var definition = _unlockService.GetClassUnlockDefinition(role, resolvedClassId);
         if (!_unlockService.RequirementsMet(state, definition))
         {
             return new UnlockAttemptResult
@@ -437,9 +476,9 @@ public sealed class ProgressionService
             };
         }
 
-        UnlockClassInState(state, role, classId);
+        UnlockClassInState(state, role, resolvedClassId);
         SavePlayerFireAndForget(player, state);
-        return new UnlockAttemptResult { Success = true, Message = $"Unlocked {GetClassName(role, classId)}." };
+        return new UnlockAttemptResult { Success = true, Message = $"Unlocked {GetClassName(role, resolvedClassId)}." };
     }
 
     public UnlockAttemptResult ForceUnlockClass(
@@ -449,15 +488,15 @@ public sealed class ProgressionService
         string classId)
     {
         EnsureRuntimeDefaults(state);
-        var exists = role == ProgressionClassRole.Zombie
-            ? FindZombie(classId) != null
-            : FindHuman(classId) != null;
-        if (!exists)
+        var resolvedClassId = role == ProgressionClassRole.Zombie
+            ? FindZombie(classId)?.Id
+            : FindHuman(classId)?.Id;
+        if (resolvedClassId == null)
             return new UnlockAttemptResult { Success = false, Message = $"Unknown class: {classId}" };
 
-        UnlockClassInState(state, role, classId);
+        UnlockClassInState(state, role, resolvedClassId);
         SavePlayerFireAndForget(player, state);
-        return new UnlockAttemptResult { Success = true, Message = $"Unlocked {GetClassName(role, classId)}." };
+        return new UnlockAttemptResult { Success = true, Message = $"Unlocked {GetClassName(role, resolvedClassId)}." };
     }
 
     public UnlockAttemptResult TryUnlockAbility(
@@ -774,6 +813,7 @@ public sealed class ProgressionService
         state.GlobalLevel = 1;
         state.GlobalXP = 0;
         state.Money = GetStartingMoney();
+        state.NativeMoneySyncReady = false;
         state.UnlockedZombieClassIds.Clear();
         state.UnlockedHumanClassIds.Clear();
         state.ZombieProgression.Clear();
@@ -912,6 +952,58 @@ public sealed class ProgressionService
 
         if (state.PreferredHumanClass == null || !IsClassUnlockedInternal(state, ProgressionClassRole.Human, state.PreferredHumanClass.Id))
             state.PreferredHumanClass = starterHuman;
+    }
+
+    private void WriteNativeMoney(CCSPlayerController player, PlayerState state, int money)
+    {
+        if (player.InGameMoneyServices == null)
+            return;
+
+        player.InGameMoneyServices.Account = money;
+        player.InGameMoneyServices.StartAccount = money;
+        player.MarkMoneyStateChanged();
+        state.LastAppliedNativeMoney = money;
+        state.NativeMoneySyncReady = player.InGameMoneyServices.Account == money;
+    }
+
+    private static void TryRequestNativeMoneyHud(CCSPlayerController player, PlayerState state)
+    {
+        var now = DateTime.UtcNow;
+        if (now < state.NextNativeMoneyHudRefreshAtUtc)
+            return;
+
+        state.NextNativeMoneyHudRefreshAtUtc = now.AddSeconds(10);
+
+        try
+        {
+            player.ExecuteClientCommand("cl_showloadout 1");
+            player.ReplicateConVar("cl_showloadout", "1");
+        }
+        catch
+        {
+        }
+    }
+
+    private void QueueNativeMoneyRefresh(CCSPlayerController player, PlayerState state, int money)
+    {
+        Server.NextFrame(() => WriteNativeMoneyIfValid(player, state, money));
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            Server.NextFrame(() => WriteNativeMoneyIfValid(player, state, money));
+
+            await Task.Delay(350);
+            Server.NextFrame(() => WriteNativeMoneyIfValid(player, state, money));
+        });
+    }
+
+    private void WriteNativeMoneyIfValid(CCSPlayerController player, PlayerState state, int money)
+    {
+        if (!player.IsValid)
+            return;
+
+        WriteNativeMoney(player, state, money);
     }
 
     private PlayerProgressionData CreateNewProgressionData(ulong steamId, string playerName)
@@ -1097,6 +1189,27 @@ public sealed class ProgressionService
             state.UnlockedHumanClassIds.Add(classId);
             GetHumanProgression(state, classId);
         }
+    }
+
+    private bool EnsureClassUnlockedIfReady(
+        PlayerState state,
+        ProgressionClassRole role,
+        string classId,
+        out string lockMessage)
+    {
+        lockMessage = string.Empty;
+        if (IsClassUnlocked(state, role, classId))
+            return false;
+
+        var definition = _unlockService.GetClassUnlockDefinition(role, classId);
+        if (!_unlockService.RequirementsMet(state, definition))
+        {
+            lockMessage = $"Locked. Requirements: {_unlockService.FormatRequirements(state, definition)}";
+            return false;
+        }
+
+        UnlockClassInState(state, role, classId);
+        return true;
     }
 
     private void UnlockAbilityInState(PlayerState state, ProgressionClassRole role, string classId, AbilityType ability)

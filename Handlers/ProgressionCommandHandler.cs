@@ -216,8 +216,10 @@ public sealed class ProgressionCommandHandler
             return;
         }
 
-        ReplyResult(command, _progressionService.SetPreferredClass(player!, state, ProgressionClassRole.Zombie, command.GetArg(1)));
-        player?.PrintToCenterHtml($"<font color='#ff3d3d'>{_progressionService.GetPreferredZombie(state).Name}</font><br><font color='#ffffff'>Default zombie selected</font>", 4);
+        var result = _progressionService.SetPreferredClass(player!, state, ProgressionClassRole.Zombie, command.GetArg(1));
+        ReplyResult(command, result);
+        if (result.Success)
+            player?.PrintToCenterHtml($"<font color='#ff3d3d'>{_progressionService.GetPreferredZombie(state).Name}</font><br><font color='#ffffff'>Default zombie selected</font>", 4);
     }
 
     private void OnHumanCommand(CCSPlayerController? player, CommandInfo command)
@@ -250,8 +252,10 @@ public sealed class ProgressionCommandHandler
             return;
         }
 
-        ReplyResult(command, _progressionService.SetPreferredClass(player!, state, ProgressionClassRole.Human, command.GetArg(1)));
-        player?.PrintToCenterHtml($"<font color='#7fd7ff'>{_progressionService.GetPreferredHuman(state).Name}</font><br><font color='#ffffff'>Default human selected</font>", 4);
+        var result = _progressionService.SetPreferredClass(player!, state, ProgressionClassRole.Human, command.GetArg(1));
+        ReplyResult(command, result);
+        if (result.Success)
+            player?.PrintToCenterHtml($"<font color='#7fd7ff'>{_progressionService.GetPreferredHuman(state).Name}</font><br><font color='#ffffff'>Default human selected</font>", 4);
     }
 
     private void OnAbilitiesCommand(CCSPlayerController? player, CommandInfo command)

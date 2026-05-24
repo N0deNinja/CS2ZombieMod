@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using CounterStrikeSharp.API.Modules.Utils;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 
@@ -26,32 +28,32 @@ public class AbilityManager
 
         if (!state.IsZombie || zombie == null)
         {
-            player.PrintToChat($"{config.ChatConfig.ZombiePrefix} You are not a zombie.");
+            player.PrintToChat(ChatText.Zombie("You are not a zombie."));
             return;
         }
 
 
         if (!_progressionService.HasAbilityAvailable(state, type))
         {
-            player.PrintToChat(config.MessagesConfig.InvalidAbility);
+            player.PrintToChat(ChatText.Error(config.MessagesConfig.InvalidAbility));
             return;
         }
 
         if (state.IsOnCooldown(type, out var remaining))
         {
             Console.WriteLine($"{type} - Is on cooldown");
-            player.PrintToChat(string.Format(
+            player.PrintToChat(ChatText.Zombie(string.Format(
                 config.MessagesConfig.AbilityOnCooldown,
                 AbilityRegistry.Get(type)?.Name ?? type.ToString(),
                 Math.Ceiling(remaining)
-            ));
+            )));
             return;
         }
 
         var ability = AbilityRegistry.Get(type);
         if (ability == null)
         {
-            player.PrintToChat(config.MessagesConfig.InvalidAbility);
+            player.PrintToChat(ChatText.Error(config.MessagesConfig.InvalidAbility));
             return;
         }
 
@@ -59,7 +61,7 @@ public class AbilityManager
         {
             ability.Execute(context);
             if (state.GlobalCooldowns.ContainsKey(type) || state.ActiveAbilities.Contains(type))
-                player.PrintToChat(string.Format(config.MessagesConfig.AbilityUsed, ability.Name));
+                player.PrintToChat(ChatText.Zombie($"Used ability: {ChatColors.Gold}{ability.Name}{ChatColors.Default}."));
         }
         catch (Exception ex)
         {

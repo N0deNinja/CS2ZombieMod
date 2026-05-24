@@ -30,6 +30,9 @@ public class PlayerState
     public int GlobalXP { get; set; }
     public int Money { get; set; }
     public int LastAppliedNativeMoney { get; set; }
+    public bool NativeMoneySyncReady { get; set; }
+    public DateTime NextNativeMoneySyncAtUtc { get; set; } = DateTime.MinValue;
+    public DateTime NextNativeMoneyHudRefreshAtUtc { get; set; } = DateTime.MinValue;
     public HashSet<string> UnlockedZombieClassIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> UnlockedHumanClassIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, long> Statistics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -60,6 +63,9 @@ public class PlayerState
     public DateTime NextZombiePainSoundAtUtc { get; set; } = DateTime.MinValue;
     public DateTime NextZombieClawSlashSoundAtUtc { get; set; } = DateTime.MinValue;
     public DateTime NextZombieClawHitSoundAtUtc { get; set; } = DateTime.MinValue;
+    public float? TimedSpeedModifierBase { get; set; }
+    public Dictionary<Guid, float> TimedSpeedModifierMultipliers { get; set; } = [];
+    public int TimedSpeedModifierVersion { get; set; }
 
     public Dictionary<string, ZombieProgression> ZombieProgression { get; set; } = new();
     public Dictionary<string, HumanProgression> HumanProgression { get; set; } = new();
@@ -98,11 +104,19 @@ public class PlayerState
         NextZombiePainSoundAtUtc = DateTime.MinValue;
         AirJumpsUsed = 0;
         AirJumpReady = false;
+        ResetTimedSpeedModifiers();
         ResetWallClingState();
         NextZombieClawSlashSoundAtUtc = DateTime.MinValue;
         NextZombieClawHitSoundAtUtc = DateTime.MinValue;
         ResetLurkerCloakTracking();
         InfectionAssistCredits.Clear();
+    }
+
+    public void ResetTimedSpeedModifiers()
+    {
+        TimedSpeedModifierBase = null;
+        TimedSpeedModifierMultipliers.Clear();
+        TimedSpeedModifierVersion++;
     }
 
     public void ResetLurkerCloakTracking()

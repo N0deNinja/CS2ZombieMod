@@ -4,6 +4,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Humans.Models;
 using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
@@ -31,7 +32,7 @@ public class HumanHandler
         playerState.SelectedHumanClass = humanClass;
         playerState.ResetRoleRuntimeState();
 
-        player.PrintToChat($"{_config.ChatConfig.HumanPrefix} You are now {humanClass.Name}.");
+        player.PrintToChat(ChatText.Human($"You are now {ChatText.Name(humanClass.Name)}."));
 
         Server.NextFrame(() =>
         {

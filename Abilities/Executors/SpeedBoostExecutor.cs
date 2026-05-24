@@ -29,6 +29,6 @@ public class SpeedBoostExecutor : Ability
         context.PlayerState.SetCooldown(AbilityType.SpeedBoost, config.CooldownSeconds);
         ZombieSounds.EmitAbilityActivation(player, context.Config, config);
 
-        AbilityUtils.ApplySpeedBoost(player, speedMultiplier, config.DurationSeconds);
+        AbilityUtils.ApplySpeedBoost(player, context.PlayerState, speedMultiplier, config.DurationSeconds);
     }
 }

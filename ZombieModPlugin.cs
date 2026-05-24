@@ -151,6 +151,12 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         foreach (var resource in Config.SoundConfig.Resources ?? [])
             PrecacheConfiguredResource(manifest, resource);
 
+        PrecacheConfiguredResource(manifest, "soundevents/soundevents_zr_extra.vsndevts");
+        PrecacheConfiguredResource(manifest, "sounds/inf_begun.vsnd");
+        PrecacheConfiguredResource(manifest, "sounds/inf_starts_14.vsnd");
+        PrecacheConfiguredResource(manifest, "sounds/prepare_for_infection.vsnd");
+        PrecacheConfiguredResource(manifest, "sounds/siren_14s.vsnd");
+
         if (Config.ZombieMeleeVisualConfig.EnableZombieKnifeReplacementModel)
             PrecacheConfiguredModel(manifest, Config.ZombieMeleeVisualConfig.ZombieKnifeReplacementModelPath);
 

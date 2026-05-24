@@ -1,4 +1,5 @@
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Humans.Models;
 using ZombieModPlugin.Zombies.Models;
@@ -24,7 +25,7 @@ public class BaseConfig : BasePluginConfig
 public class GeneralConfig
 {
     public int MinimumPlayersToStart { get; set; } = 2;
-    public float FirstInfectionDelaySeconds { get; set; } = 15f;
+    public float FirstInfectionDelaySeconds { get; set; } = 14f;
     public int RoundDurationSeconds { get; set; } = 300;
     public int ActiveHudIntervalSeconds { get; set; } = 1;
     public int WaitingHudIntervalSeconds { get; set; } = 1;
@@ -37,7 +38,7 @@ public class GeneralConfig
     public bool IncludeBotsInRound { get; set; } = false;
     public float AirAccelerate { get; set; } = 100f;
     public bool AutoDownloadWorkshopAddons { get; set; } = true;
-    public string[] WorkshopAddonIds { get; set; } = ["3170427476", "3730088795"];
+    public string[] WorkshopAddonIds { get; set; } = ["3170427476", "3730088795", "3730813775"];
     public bool RotateWorkshopMaps { get; set; } = false;
     public int RoundsPerWorkshopMap { get; set; } = 5;
     public string[] WorkshopMapIds { get; set; } = ["3685437201", "3222984182", "3283778158"];
@@ -84,11 +85,20 @@ public class SoundConfig
         "sounds/zombie_attack_10.vsnd",
         "sounds/zombie_attack_11.vsnd",
         "sounds/zombie_attack_12.vsnd",
+        "sounds/inf_begun.vsnd",
+        "sounds/inf_starts_14.vsnd",
+        "sounds/prepare_for_infection.vsnd",
+        "sounds/siren_14s.vsnd",
     ];
     public string FirstInfectionSound { get; set; } = "zr.amb.scream";
     public string[] ExtraFirstInfectionSounds { get; set; } = ["zr.zombie_attack_1"];
     public string InfectionSound { get; set; } = "zr.amb.scream";
     public string[] ExtraInfectionSounds { get; set; } = ["zr.zombie_attack_3"];
+    public string InfectionCountdownStartSound { get; set; } = "zr.inf_starts_14";
+    public string PrepareForInfectionSound { get; set; } = "zr.prepare_for_infection";
+    public string FirstInfectionBegunSound { get; set; } = "zr.inf_begun";
+    public string InfectionCountdownWorldSound { get; set; } = "zr.siren_14s";
+    public float InfectionCountdownWorldSoundHeightOffset { get; set; } = 256f;
     public string InfectionHitSound { get; set; } = "zr.amb.zombie_voice_idle";
     public string[] ExtraInfectionHitSounds { get; set; } = ["zr.claw.hit"];
     public string ZombiePainSound { get; set; } = "zr.amb.zombie_pain";
@@ -118,6 +128,7 @@ public class ZombieMeleeVisualConfig
 public class BlockadeConfig
 {
     public bool Enabled { get; set; } = true;
+    public bool DebugLogging { get; set; } = true;
     public string Command { get; set; } = "block";
     public string SmallArgument { get; set; } = "small";
     public string MainModel { get; set; } = "models/props/de_vertigo/pallet_cinderblock01.vmdl";
@@ -128,6 +139,7 @@ public class BlockadeConfig
     public int SmallHits { get; set; } = 5;
     public float PlacementDistance { get; set; } = 115f;
     public float PlacementHeightOffset { get; set; } = 0f;
+    public float PlacementPlayerClearance { get; set; } = 72f;
     public float ZombieHitRange { get; set; } = 110f;
     public float ZombieHitCooldownSeconds { get; set; } = 0.45f;
     public int MaxPlacedPerPlayer { get; set; } = 2;
@@ -158,8 +170,8 @@ public class CommandsConfig
 
 public class ChatConfig
 {
-    public string ZombiePrefix { get; set; } = "[ZOMBIE]";
-    public string HumanPrefix { get; set; } = "[HUMAN]";
+    public string ZombiePrefix { get; set; } = $"{ChatColors.Red}[ZOMBIE]{ChatColors.Default}";
+    public string HumanPrefix { get; set; } = $"{ChatColors.LightBlue}[HUMAN]{ChatColors.Default}";
 }
 
 public class MessagesConfig
@@ -322,6 +334,7 @@ public class HumanConfig
     public int BuyTimeMinutes { get; set; } = 9999;
     public HumanWeaponShopConfig WeaponShop { get; set; } = new();
     public int MoneyPerKill { get; set; } = 350;
+    public int MoneyPerInfection { get; set; } = 500;
     public int MoneyPerRound { get; set; } = 1500;
     public float ZombieKnockbackForce { get; set; } = 420f;
     public float ZombieKnockbackUpForce { get; set; } = 90f;
@@ -723,10 +736,11 @@ public class WallClimbAbilityConfig : AbilitySettingsConfig
 
     public bool RequireWallContact { get; set; } = true;
     public bool RequireAirborne { get; set; } = true;
-    public float WallTraceDistance { get; set; } = 42f;
+    public float WallTraceDistance { get; set; } = 72f;
     public float WallTraceHeightOffset { get; set; } = 36f;
     public uint WallTraceMask { get; set; } = 0xC3001;
     public string WallRequiredMessage { get; set; } = "Wall Cling needs a nearby wall.";
+    public string AirborneRequiredMessage { get; set; } = "Wall Cling only works while airborne.";
     public string CancelMessage { get; set; } = "Wall Cling released.";
 }
 

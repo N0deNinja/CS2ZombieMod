@@ -1,7 +1,10 @@
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Events;
+using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 
@@ -49,11 +52,40 @@ public class GeneralHandlers
         }
 
         _progressionService.BeginLoadPlayer(player, state);
+        ScheduleAutoAssignToCounterTerrorist(player);
 
-        player.PrintToChat($"Welcome, {player.PlayerName}!");
-        player.PrintToChat("Type !help or !shop for Zombie Mod progression.");
+        player.PrintToChat(ChatText.Info($"Welcome, {ChatText.Name(player.PlayerName)}!"));
+        player.PrintToChat(ChatText.Info($"Type {ChatText.Command("!help")} or {ChatText.Command("!shop")} for Zombie Mod progression."));
         Console.WriteLine($"[ZombieMod] Player {player.PlayerName} joined - PlayerState initialized.");
 
         return HookResult.Continue;
+    }
+
+    private static void ScheduleAutoAssignToCounterTerrorist(CCSPlayerController player)
+    {
+        Server.NextFrame(() => AutoAssignToCounterTerrorist(player));
+
+        _ = Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * (attempt + 1)));
+                Server.NextFrame(() => AutoAssignToCounterTerrorist(player));
+            }
+        });
+    }
+
+    private static void AutoAssignToCounterTerrorist(CCSPlayerController player)
+    {
+        if (!player.IsValid || player.Connected != PlayerConnectedState.Connected)
+            return;
+
+        if (player.Team != CsTeam.CounterTerrorist)
+            player.SwitchTeam(CsTeam.CounterTerrorist);
+
+        player.ForceTeamState(CsTeam.CounterTerrorist);
+
+        if (!player.PawnIsAlive)
+            player.Respawn();
     }
 }

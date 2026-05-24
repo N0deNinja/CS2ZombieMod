@@ -9,6 +9,7 @@ using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Blockades;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Humans.Handlers;
 using ZombieModPlugin.Progression.Models;
 using ZombieModPlugin.Progression.Services;
@@ -43,6 +44,7 @@ public class ZombieRoundManager
     private int _currentWorkshopMapIndex = -1;
     private int _completedRoundsOnCurrentWorkshopMap;
     private DateTime _nextZombieIdleSoundAtUtc = DateTime.MinValue;
+    private CBaseEntity? _infectionCountdownWorldSound;
 
     public ZombieRoundManager(
         Dictionary<ulong, PlayerState> playerStates,
@@ -279,6 +281,7 @@ public class ZombieRoundManager
 
         InfectPlayer(victim, attacker, isInitialInfection: false);
         _progressionService.AwardReward(attacker, attackerState, ProgressionRewardType.HumanKill, "infections");
+        _progressionService.AwardMoney(attacker, attackerState, _config.HumanConfig.MoneyPerInfection, "infecting a human");
         ShowActiveHud();
         CheckWinConditions();
 
@@ -331,6 +334,7 @@ public class ZombieRoundManager
         {
             InfectPlayer(victim, attacker, isInitialInfection: false);
             _progressionService.AwardReward(attacker, attackerState, ProgressionRewardType.Infection, "infections");
+            _progressionService.AwardMoney(attacker, attackerState, _config.HumanConfig.MoneyPerInfection, "infecting a human");
             ShowActiveHud();
             CheckWinConditions();
         }
@@ -400,8 +404,11 @@ public class ZombieRoundManager
                 continue;
 
             var state = player.GetState(_playerStates);
-            if (!state.IsZombie)
+            if (!state.IsZombie && now >= state.NextNativeMoneySyncAtUtc)
+            {
+                state.NextNativeMoneySyncAtUtc = now.AddSeconds(1);
                 _progressionService.SyncNativeMoney(player, state, save: true);
+            }
 
             UpdateWallCling(player, state);
             ResetAirJumpsIfGrounded(player, state);
@@ -570,7 +577,7 @@ public class ZombieRoundManager
                 Server.NextFrame(() =>
                 {
                     if (IsLifecycleCurrent(lifecycleId, token))
-                        _phase = RoundPhase.InfectionCountdown;
+                        BeginInfectionCountdown();
                 });
 
                 var countdownSeconds = Math.Max(1, (int)Math.Ceiling(_config.GeneralConfig.FirstInfectionDelaySeconds));
@@ -583,8 +590,13 @@ public class ZombieRoundManager
                     var capturedRemaining = remaining;
                     Server.NextFrame(() =>
                     {
-                        if (IsLifecycleCurrent(lifecycleId, token) && _phase == RoundPhase.InfectionCountdown)
-                            ShowCountdownHud(capturedRemaining);
+                        if (!IsLifecycleCurrent(lifecycleId, token) || _phase != RoundPhase.InfectionCountdown)
+                            return;
+
+                        if (capturedRemaining == 5)
+                            EmitPlayerOnlySoundToAll(_config.SoundConfig.PrepareForInfectionSound);
+
+                        ShowCountdownHud(capturedRemaining);
                     });
 
                     await Task.Delay(TimeSpan.FromSeconds(1), token);
@@ -610,18 +622,43 @@ public class ZombieRoundManager
     {
         while (IsLifecycleCurrent(lifecycleId, token))
         {
-            var connectedPlayers = GetConnectedPlayers().Count();
+            var connectedPlayers = await CountConnectedPlayersNextFrame(lifecycleId, token);
             if (connectedPlayers >= _config.GeneralConfig.MinimumPlayersToStart)
                 return;
 
             Server.NextFrame(() =>
             {
                 if (IsLifecycleCurrent(lifecycleId, token) && _phase == RoundPhase.Waiting)
-                    ShowWaitingHud(GetConnectedPlayers().Count());
+                    ShowWaitingHud(connectedPlayers);
             });
 
             await Task.Delay(TimeSpan.FromSeconds(_config.GeneralConfig.WaitingHudIntervalSeconds), token);
         }
+    }
+
+    private Task<int> CountConnectedPlayersNextFrame(int lifecycleId, CancellationToken token)
+    {
+        var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Server.NextFrame(() =>
+        {
+            try
+            {
+                if (!IsLifecycleCurrent(lifecycleId, token))
+                {
+                    completion.TrySetCanceled(token);
+                    return;
+                }
+
+                completion.TrySetResult(GetConnectedPlayers().Count());
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        });
+
+        return completion.Task;
     }
 
     private void BeginActiveRound(int lifecycleId)
@@ -638,6 +675,7 @@ public class ZombieRoundManager
         }
 
         _phase = RoundPhase.Active;
+        StopInfectionCountdownWorldSound();
         _activeRoundEndsAtUtc = DateTime.UtcNow.AddSeconds(_config.GeneralConfig.RoundDurationSeconds);
         ScheduleNextZombieIdleSound();
 
@@ -650,10 +688,18 @@ public class ZombieRoundManager
         foreach (var zombie in initialZombies)
             InfectPlayer(zombie, infector: null, isInitialInfection: true);
 
-        BroadcastChat($"{_config.ChatConfig.ZombiePrefix} Infection has begun. Survive or spread the infection.");
+        EmitPlayerOnlySoundToAll(_config.SoundConfig.FirstInfectionBegunSound);
+        BroadcastChat(ChatText.Zombie($"{ChatColors.Gold}Infection has begun.{ChatColors.Default} Survive or spread the infection."));
         ShowActiveHud();
         StartActiveHudLoop(lifecycleId, _roundCancellation?.Token ?? CancellationToken.None);
         CheckWinConditions();
+    }
+
+    private void BeginInfectionCountdown()
+    {
+        _phase = RoundPhase.InfectionCountdown;
+        EmitPlayerOnlySoundToAll(_config.SoundConfig.InfectionCountdownStartSound);
+        StartInfectionCountdownWorldSound();
     }
 
     private void StartActiveHudLoop(int lifecycleId, CancellationToken token)
@@ -701,7 +747,7 @@ public class ZombieRoundManager
             state.ActiveAbilities.Clear();
 
             _humanHandler.OnBecomeHuman(player, state);
-            player.PrintToChat(_config.MessagesConfig.StartingAsHuman);
+            player.PrintToChat(ChatText.Human(_config.MessagesConfig.StartingAsHuman));
         }
     }
 
@@ -722,6 +768,7 @@ public class ZombieRoundManager
     private void ResetRoundState()
     {
         ZombieSounds.StopAllTrackedSounds();
+        StopInfectionCountdownWorldSound();
 
         foreach (var state in _playerStates.Values)
         {
@@ -826,15 +873,15 @@ public class ZombieRoundManager
 
         if (isInitialInfection)
         {
-            player.PrintToChat($"{_config.ChatConfig.ZombiePrefix} You are one of the first infected.");
+            player.PrintToChat(ChatText.Zombie($"{ChatColors.Gold}You are one of the first infected.{ChatColors.Default}"));
             player.PrintToCenterHtml("<font color='#ff3d3d'>YOU ARE INFECTED</font><br><font color='#ffffff'>Hunt the humans.</font>", 4);
             Console.WriteLine($"[ZombieMod] {player.PlayerName} selected as an initial zombie.");
         }
         else
         {
-            player.PrintToChat($"{_config.ChatConfig.ZombiePrefix} You were infected by {infector?.PlayerName ?? "a zombie"}.");
+            player.PrintToChat(ChatText.Zombie($"You were infected by {ChatText.Name(infector?.PlayerName ?? "a zombie")}."));
             player.PrintToCenterHtml("<font color='#ff3d3d'>INFECTED</font><br><font color='#ffffff'>You will respawn as a zombie.</font>", 4);
-            infector?.PrintToChat($"{_config.ChatConfig.ZombiePrefix} You infected {player.PlayerName}.");
+            infector?.PrintToChat(ChatText.Zombie($"You infected {ChatText.Name(player.PlayerName)}."));
             Console.WriteLine($"[ZombieMod] {player.PlayerName} infected by {infector?.PlayerName ?? "unknown"}.");
         }
     }
@@ -1322,10 +1369,9 @@ public class ZombieRoundManager
         CancelRoundLifecycle();
         var restartLifecycleId = Volatile.Read(ref _lifecycleId);
 
-        var prefix = humansWon ? _config.ChatConfig.HumanPrefix : _config.ChatConfig.ZombiePrefix;
         var message = humansWon
-            ? $"{prefix} Humans win. {reason}"
-            : $"{prefix} Zombies win. {reason}";
+            ? ChatText.Human($"{ChatColors.Gold}Humans win.{ChatColors.Default} {reason}")
+            : ChatText.Zombie($"{ChatColors.Gold}Zombies win.{ChatColors.Default} {reason}");
 
         BroadcastChat(message);
         if (!humansWon)
@@ -1356,15 +1402,22 @@ public class ZombieRoundManager
 
     private void AwardRoundEndProgression(bool humansWon)
     {
+        foreach (var player in GetConnectedPlayers())
+        {
+            var state = player.GetState(_playerStates);
+            if (!state.IsZombie)
+                _progressionService.SyncNativeMoney(player, state, save: true);
+
+            _progressionService.AwardMoney(player, state, _config.HumanConfig.MoneyPerRound, "finishing the round");
+        }
+
         foreach (var player in GetAlivePlayers())
         {
             var state = player.GetState(_playerStates);
             if (humansWon && !state.IsZombie)
             {
-                _progressionService.SyncNativeMoney(player, state, save: true);
                 _progressionService.AwardReward(player, state, ProgressionRewardType.HumanSurvival, "survivals");
                 _progressionService.AwardReward(player, state, ProgressionRewardType.RoundWin, "wins");
-                _progressionService.AwardHumanMoney(player, state, _config.HumanConfig.MoneyPerRound, "surviving the round");
             }
             else if (!humansWon && state.IsZombie)
             {
@@ -1397,7 +1450,7 @@ public class ZombieRoundManager
         _currentWorkshopMapIndex = nextIndex;
         ApplyWorkshopAddonOrder(nextIndex);
 
-        BroadcastChat($"{_config.ChatConfig.ZombiePrefix} Loading next map: {nextMapName}");
+        BroadcastChat(ChatText.Zombie($"Loading next map: {ChatColors.Gold}{nextMapName}{ChatColors.Default}"));
         Console.WriteLine($"[ZombieMod] Loading map {nextMapName} from configured workshop rotation.");
         Server.ExecuteCommand($"map {nextMapName}");
 
@@ -1636,6 +1689,55 @@ public class ZombieRoundManager
         EmitPlayerSound(zombies[_random.Next(zombies.Count)], soundEventName, extraSoundEventNames);
     }
 
+    private void EmitPlayerOnlySoundToAll(string? soundEventName)
+    {
+        foreach (var player in GetConnectedPlayers())
+            ZombieSounds.EmitToPlayerOnly(player, _config, soundEventName);
+    }
+
+    private void StartInfectionCountdownWorldSound()
+    {
+        StopInfectionCountdownWorldSound();
+
+        var position = GetInfectionCountdownWorldSoundPosition();
+        _infectionCountdownWorldSound = ZombieSounds.StartWorldSound(
+            position,
+            _config,
+            _config.SoundConfig.InfectionCountdownWorldSound);
+
+        Console.WriteLine($"[ZombieMod] Infection countdown world sound position: {FormatVector(position)}.");
+    }
+
+    private void StopInfectionCountdownWorldSound()
+    {
+        ZombieSounds.StopWorldSound(_infectionCountdownWorldSound);
+        _infectionCountdownWorldSound = null;
+    }
+
+    private CounterStrikeSharp.API.Modules.Utils.Vector GetInfectionCountdownWorldSoundPosition()
+    {
+        var origins = GetAlivePlayers()
+            .Select(player => player.PlayerPawn.Value?.AbsOrigin)
+            .Where(origin => origin != null)
+            .Select(origin => origin!)
+            .ToList();
+
+        if (origins.Count == 0)
+        {
+            origins = GetMapSpawnPoints()
+                .Select(spawn => spawn.Position)
+                .ToList();
+        }
+
+        if (origins.Count == 0)
+            return new CounterStrikeSharp.API.Modules.Utils.Vector(0f, 0f, _config.SoundConfig.InfectionCountdownWorldSoundHeightOffset);
+
+        var x = origins.Average(origin => origin.X);
+        var y = origins.Average(origin => origin.Y);
+        var z = origins.Average(origin => origin.Z) + _config.SoundConfig.InfectionCountdownWorldSoundHeightOffset;
+        return new CounterStrikeSharp.API.Modules.Utils.Vector(x, y, z);
+    }
+
     private void ScheduleNextZombieIdleSound()
     {
         var interval = Math.Max(4.0f, _config.SoundConfig.ZombieIdleIntervalSeconds);
@@ -1645,6 +1747,7 @@ public class ZombieRoundManager
     private void CancelRoundLifecycle()
     {
         Interlocked.Increment(ref _lifecycleId);
+        StopInfectionCountdownWorldSound();
 
         if (_roundCancellation == null)
             return;
@@ -1657,6 +1760,15 @@ public class ZombieRoundManager
     private bool IsLifecycleCurrent(int lifecycleId, CancellationToken token)
     {
         return !token.IsCancellationRequested && Volatile.Read(ref _lifecycleId) == lifecycleId;
+    }
+
+    private static string FormatVector(CounterStrikeSharp.API.Modules.Utils.Vector vector)
+    {
+        return string.Join(
+            " ",
+            vector.X.ToString("0.##", CultureInfo.InvariantCulture),
+            vector.Y.ToString("0.##", CultureInfo.InvariantCulture),
+            vector.Z.ToString("0.##", CultureInfo.InvariantCulture));
     }
 
     private readonly record struct MapSpawnPoint(CounterStrikeSharp.API.Modules.Utils.Vector Position, CounterStrikeSharp.API.Modules.Utils.QAngle Angles);

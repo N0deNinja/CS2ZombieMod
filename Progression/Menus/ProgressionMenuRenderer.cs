@@ -82,7 +82,7 @@ public sealed class ProgressionMenuRenderer
                 var status = isUnlocked
                     ? Green("UNLOCKED")
                     : isReady
-                        ? $"{ChatColors.Yellow}READY{ChatColors.Default}"
+                        ? $"{ChatColors.Yellow}READY TO UNLOCK{ChatColors.Default}"
                         : Red("LOCKED");
                 var requirement = isUnlocked
                     ? "owned"
@@ -112,7 +112,7 @@ public sealed class ProgressionMenuRenderer
                 var status = isUnlocked
                     ? Green("UNLOCKED")
                     : isReady
-                        ? $"{ChatColors.Yellow}READY{ChatColors.Default}"
+                        ? $"{ChatColors.Yellow}READY TO UNLOCK{ChatColors.Default}"
                         : Red("LOCKED");
                 var requirement = isUnlocked
                     ? "owned"

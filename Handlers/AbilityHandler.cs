@@ -1,10 +1,12 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Progression.Services;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Models;
@@ -46,7 +48,7 @@ public class AbilityHandler
 
         if (command.ArgCount < 2)
         {
-            command.ReplyToCommand("Usage: css_zability <slot|ability_id>. Example: bind mouse4 \"css_zability 1\"");
+            Reply(command, $"Usage: {ChatText.Command("css_zability <slot|ability_id>")} Example: bind mouse4 \"css_zability 1\"");
             return;
         }
 
@@ -59,7 +61,7 @@ public class AbilityHandler
 
         if (!TryResolveRegisteredAbility(requestedAbility, out var type, out _))
         {
-            command.ReplyToCommand($"Unknown or unimplemented ability: {requestedAbility}");
+            ReplyError(command, $"Unknown or unimplemented ability: {ChatColors.Yellow}{requestedAbility}{ChatColors.Default}");
             return;
         }
 
@@ -73,7 +75,7 @@ public class AbilityHandler
 
         if (command.ArgCount < 2 || !int.TryParse(command.GetArg(1), out var slot) || slot < 1)
         {
-            command.ReplyToCommand("Usage: css_zability_slot <slot>. Example: bind mouse5 \"css_zability_slot 1\"");
+            Reply(command, $"Usage: {ChatText.Command("css_zability_slot <slot>")} Example: bind mouse5 \"css_zability_slot 1\"");
             return;
         }
 
@@ -84,7 +86,7 @@ public class AbilityHandler
     {
         if (slot < 1)
         {
-            command.ReplyToCommand("Ability slots start at 1.");
+            ReplyError(command, "Ability slots start at 1.");
             return;
         }
 
@@ -94,13 +96,13 @@ public class AbilityHandler
         var loadout = _progressionService.GetUsableAbilities(state, zombie).ToList();
         if (loadout.Count == 0)
         {
-            command.ReplyToCommand("You do not have any usable abilities for this zombie type yet.");
+            ReplyError(command, "You do not have any usable abilities for this zombie type yet.");
             return;
         }
 
         if (slot > loadout.Count)
         {
-            command.ReplyToCommand($"Ability slot {slot} is empty. You currently have {loadout.Count} usable ability slot(s).");
+            ReplyError(command, $"Ability slot {ChatText.Number(slot)} is empty. You currently have {ChatText.Number(loadout.Count)} usable ability slot(s).");
             return;
         }
 
@@ -150,71 +152,71 @@ public class AbilityHandler
     {
         if (!TryResolveAbilityType(requestedAbility, out var type))
         {
-            command.ReplyToCommand(_config.MessagesConfig.InvalidAbility);
+            ReplyError(command, _config.MessagesConfig.InvalidAbility);
             return;
         }
 
         if (zombie.DefaultAbilities.Contains(type))
         {
-            command.ReplyToCommand($"{GetAbilityDisplayName(type)} is already available by default for {zombie.Name}.");
+            Reply(command, $"{ChatColors.Gold}{GetAbilityDisplayName(type)}{ChatColors.Default} is already available by default for {ChatText.Name(zombie.Name)}.");
             return;
         }
 
         if (!zombie.UnlockableAbilities.Contains(type))
         {
-            command.ReplyToCommand($"{GetAbilityDisplayName(type)} is not unlockable by {zombie.Name}.");
+            ReplyError(command, $"{ChatColors.Gold}{GetAbilityDisplayName(type)}{ChatColors.Default} is not unlockable by {ChatText.Name(zombie.Name)}.");
             return;
         }
 
         if (progression.UnlockedAbilities.Contains(type))
         {
-            command.ReplyToCommand($"{GetAbilityDisplayName(type)} is already unlocked.");
+            Reply(command, $"{ChatColors.Gold}{GetAbilityDisplayName(type)}{ChatColors.Default} is already unlocked.");
             return;
         }
 
         var ability = AbilityRegistry.Get(type);
         if (ability == null)
         {
-            command.ReplyToCommand($"{GetAbilityDisplayName(type)} is configured but not implemented yet.");
+            ReplyError(command, $"{ChatColors.Gold}{GetAbilityDisplayName(type)}{ChatColors.Default} is configured but not implemented yet.");
             return;
         }
 
         var totalAbilityCount = zombie.DefaultAbilities.Length + progression.UnlockedAbilities.Count;
         if (totalAbilityCount >= _config.ZombieConfig.MaxAbilitiesPerZombie)
         {
-            command.ReplyToCommand(_config.MessagesConfig.MaxAbilitiesReached);
+            ReplyError(command, _config.MessagesConfig.MaxAbilitiesReached);
             return;
         }
 
         var unlockCost = _config.AbilityConfig.GetSettings(type).UnlockCost;
         if (progression.XP < unlockCost)
         {
-            command.ReplyToCommand(_config.MessagesConfig.NotEnoughExp);
+            ReplyError(command, _config.MessagesConfig.NotEnoughExp);
             return;
         }
 
         progression.XP -= unlockCost;
         progression.UnlockedAbilities.Add(type);
 
-        command.ReplyToCommand(string.Format(_config.MessagesConfig.AbilityUnlocked, ability.Name));
+        Reply(command, string.Format(_config.MessagesConfig.AbilityUnlocked, $"{ChatColors.Gold}{ability.Name}{ChatColors.Default}"));
     }
 
     private void PrintAbilityList(CommandInfo command, Zombie zombie, ZombieProgression progression)
     {
-        command.ReplyToCommand($"{_config.MessagesConfig.ShopHeader} {zombie.Name}");
-        command.ReplyToCommand($"XP: {progression.XP} | Bind example: bind mouse4 \"css_zability 1\"");
+        command.ReplyToCommand($"{ChatColors.Gold}======== {ChatColors.LightPurple}Ability Shop{ChatColors.Gold} ========{ChatColors.Default}");
+        Reply(command, $"{ChatText.Name(zombie.Name)} | XP: {ChatColors.Lime}{progression.XP}{ChatColors.Default} | bind mouse4 \"css_zability 1\"");
 
         var usableAbilities = GetUsableAbilities(zombie, progression).ToList();
         if (usableAbilities.Count == 0)
         {
-            command.ReplyToCommand("No implemented abilities are currently usable for this zombie type.");
+            ReplyError(command, "No implemented abilities are currently usable for this zombie type.");
         }
 
         for (var slot = 0; slot < usableAbilities.Count; slot++)
         {
             var ability = AbilityRegistry.Get(usableAbilities[slot])!;
 
-            command.ReplyToCommand($"Slot {slot + 1}: {ability.Name} [{ability.Id}]");
+            Reply(command, $"Slot {ChatText.Number(slot + 1)}: {ChatColors.Gold}{ability.Name}{ChatColors.Default} {ChatColors.Yellow}[{ability.Id}]{ChatColors.Default}");
         }
 
         foreach (var type in zombie.UnlockableAbilities)
@@ -227,7 +229,7 @@ public class AbilityHandler
                 ? $"{GetAbilityDisplayName(type)} (not implemented)"
                 : $"{ability.Name} [{ability.Id}] - Cost: {_config.AbilityConfig.GetSettings(type).UnlockCost} XP";
 
-            command.ReplyToCommand($"Unlockable: {label}");
+            Reply(command, $"Unlockable: {label}");
         }
     }
 
@@ -251,7 +253,7 @@ public class AbilityHandler
 
         if (player == null || !player.IsValid)
         {
-            command.ReplyToCommand("This command can only be used by a connected player.");
+            ReplyError(command, "This command can only be used by a connected player.");
             return false;
         }
 
@@ -270,7 +272,7 @@ public class AbilityHandler
 
         if (!state.IsZombie || state.SelectedZombieType == null)
         {
-            command.ReplyToCommand($"{_config.ChatConfig.ZombiePrefix} You need to be a zombie to use zombie abilities.");
+            command.ReplyToCommand(ChatText.Zombie("You need to be a zombie to use zombie abilities."));
             return false;
         }
 
@@ -358,5 +360,15 @@ public class AbilityHandler
             command = command[4..];
 
         return command.ToLowerInvariant();
+    }
+
+    private static void Reply(CommandInfo command, string message)
+    {
+        command.ReplyToCommand(ChatText.Info(message));
+    }
+
+    private static void ReplyError(CommandInfo command, string message)
+    {
+        command.ReplyToCommand(ChatText.Error(message));
     }
 }

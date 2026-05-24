@@ -5,6 +5,7 @@ using System.Drawing;
 using ZombieModPlugin.Abilities.Utils;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
@@ -41,7 +42,7 @@ public class FrostBoltExecutor : Ability
         SpawnParticle(config.CastParticle, startPosition, 0.35f);
         LaunchProjectile(context, startPosition, forward, config);
 
-        player.PrintToChat($"{context.Config.ChatConfig.ZombiePrefix} Frost Bolt launched.");
+        player.PrintToChat(ChatText.Zombie($"{ChatColors.LightBlue}Frost Bolt{ChatColors.Default} launched."));
         context.PlayerState.SetCooldown(AbilityType.FrostBolt, config.CooldownSeconds);
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.FrostBolt, config.DurationSeconds, context.PlayerState);
     }
@@ -176,9 +177,10 @@ public class FrostBoltExecutor : Ability
         if (targetPawn != null && targetPawn.IsValid)
             ZombieSounds.EmitFromPool(target, context.Config, projectile.HitSound, projectile.ExtraHitSounds, projectile.HitSounds);
 
-        AbilityUtils.ApplySpeedModifier(target, projectile.SlowMultiplier, projectile.SlowDurationSeconds);
-        target.PrintToChat($"{context.Config.ChatConfig.ZombiePrefix} {projectile.HitMessage}");
-        context.Player.PrintToChat($"{context.Config.ChatConfig.ZombiePrefix} Frost Bolt chilled {target.PlayerName}.");
+        var targetState = target.GetState(context.PlayerStates);
+        AbilityUtils.ApplySpeedModifier(target, targetState, projectile.SlowMultiplier, projectile.SlowDurationSeconds);
+        target.PrintToChat(ChatText.Zombie(projectile.HitMessage));
+        context.Player.PrintToChat(ChatText.Zombie($"Frost Bolt chilled {ChatText.Name(target.PlayerName)}."));
     }
 
     private static CParticleSystem? CreateParticle(string particleName, Vector position)

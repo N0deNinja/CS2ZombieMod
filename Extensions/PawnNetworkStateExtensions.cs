@@ -46,6 +46,13 @@ public static class PawnNetworkStateExtensions
         TryMarkStateChanged(entity, "CCSPlayerController_InventoryServices", "m_vecServerAuthoritativeWeaponSlots");
     }
 
+    public static void MarkMoneyStateChanged(this CBaseEntity entity)
+    {
+        TryMarkStateChanged(entity, "CCSPlayerController", "m_pInGameMoneyServices");
+        TryMarkStateChanged(entity, "CCSPlayerController_InGameMoneyServices", "m_iAccount");
+        TryMarkStateChanged(entity, "CCSPlayerController_InGameMoneyServices", "m_iStartAccount");
+    }
+
     public static void MarkTeamStateChanged(this CBaseEntity entity)
     {
         MarkStateChanged(entity, "CBaseEntity", "m_iTeamNum");

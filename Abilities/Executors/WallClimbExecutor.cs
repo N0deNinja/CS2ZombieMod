@@ -9,7 +9,6 @@ namespace ZombieModPlugin.Abilities.Executors;
 public class WallClimbExecutor : Ability
 {
     private const int RayTypeEndPoint = 0;
-    private const int GameTraceHitNormalOffset = 144;
     private const int GameTraceFractionOffset = 172;
     private const int GameTraceStartInSolidOffset = 183;
     private const uint DefaultWallTraceMask = 0xC3001;
@@ -34,9 +33,9 @@ public class WallClimbExecutor : Ability
             return;
 
         var config = context.Config.AbilityConfig.WallClimb;
-        if (!CanStartWallCling(player, pawn, config))
+        if (!CanStartWallCling(player, pawn, config, out var failureMessage))
         {
-            player.PrintToCenter(config.WallRequiredMessage);
+            player.PrintToCenter(failureMessage);
             return;
         }
 
@@ -56,15 +55,32 @@ public class WallClimbExecutor : Ability
         state.SetCooldown(AbilityType.WallClimb, config.CooldownSeconds);
     }
 
-    private static bool CanStartWallCling(CCSPlayerController player, CCSPlayerPawn pawn, WallClimbAbilityConfig config)
+    private static bool CanStartWallCling(
+        CCSPlayerController player,
+        CCSPlayerPawn pawn,
+        WallClimbAbilityConfig config,
+        out string failureMessage)
     {
-        if (!config.RequireWallContact)
-            return true;
-
         if (config.RequireAirborne && IsOnGround(pawn))
+        {
+            failureMessage = GetMessageOrDefault(config.AirborneRequiredMessage, "Wall Cling only works while airborne.");
             return false;
+        }
 
-        return HasNearbyWall(player, pawn, config);
+        if (!config.RequireWallContact)
+        {
+            failureMessage = string.Empty;
+            return true;
+        }
+
+        if (HasNearbyWall(player, pawn, config))
+        {
+            failureMessage = string.Empty;
+            return true;
+        }
+
+        failureMessage = GetMessageOrDefault(config.WallRequiredMessage, "Wall Cling needs a nearby wall.");
+        return false;
     }
 
     private static bool HasNearbyWall(CCSPlayerController player, CCSPlayerPawn pawn, WallClimbAbilityConfig config)
@@ -73,21 +89,24 @@ public class WallClimbExecutor : Ability
         if (origin == null)
             return false;
 
-        var traceDistance = Math.Clamp(config.WallTraceDistance, 8.0f, 160.0f);
+        var traceDistance = Math.Clamp(config.WallTraceDistance, 64.0f, 192.0f);
         var heightOffset = Math.Clamp(config.WallTraceHeightOffset, 0.0f, 96.0f);
         var mask = config.WallTraceMask == 0 ? DefaultWallTraceMask : config.WallTraceMask;
         var ignoreEntityIndex = (int)pawn.Index;
 
-        foreach (var (x, y) in WallTraceDirections())
+        foreach (var zOffset in WallTraceHeightOffsets(heightOffset))
         {
-            var start = new Vector(origin.X, origin.Y, origin.Z + heightOffset);
-            var end = new Vector(
-                origin.X + x * traceDistance,
-                origin.Y + y * traceDistance,
-                origin.Z + heightOffset);
+            foreach (var (x, y) in WallTraceDirections())
+            {
+                var start = new Vector(origin.X, origin.Y, origin.Z + zOffset);
+                var end = new Vector(
+                    origin.X + x * traceDistance,
+                    origin.Y + y * traceDistance,
+                    origin.Z + zOffset);
 
-            if (TraceHitsWall(player, start, end, ignoreEntityIndex, mask))
-                return true;
+                if (TraceHitsWall(player, start, end, ignoreEntityIndex, mask))
+                    return true;
+            }
         }
 
         return false;
@@ -129,11 +148,7 @@ public class WallClimbExecutor : Ability
         if (!startInSolid && fraction >= 1.0f)
             return false;
 
-        if (startInSolid)
-            return true;
-
-        var normalZ = ReadFloat(trace, GameTraceHitNormalOffset + sizeof(float) * 2);
-        return MathF.Abs(normalZ) <= 0.65f;
+        return true;
     }
 
     private static float ReadFloat(IntPtr pointer, int offset)
@@ -153,6 +168,21 @@ public class WallClimbExecutor : Ability
         yield return (diagonal, -diagonal);
         yield return (-diagonal, diagonal);
         yield return (-diagonal, -diagonal);
+    }
+
+    private static IEnumerable<float> WallTraceHeightOffsets(float configuredHeightOffset)
+    {
+        yield return configuredHeightOffset;
+        yield return 24.0f;
+        yield return 48.0f;
+        yield return 72.0f;
+    }
+
+    private static string GetMessageOrDefault(string value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? fallback
+            : value;
     }
 
     private static bool IsOnGround(CCSPlayerPawn pawn)

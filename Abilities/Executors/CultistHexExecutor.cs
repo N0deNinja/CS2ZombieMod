@@ -1,5 +1,6 @@
 using ZombieModPlugin.Abilities.Utils;
 using ZombieModPlugin.Extensions;
+using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Sounds;
 
 namespace ZombieModPlugin.Abilities.Executors;
@@ -40,15 +41,15 @@ public class CultistHexExecutor : Ability
             if (targetState.IsZombie)
                 continue;
 
-            AbilityUtils.ApplySpeedModifier(target, speedMultiplier, config.DurationSeconds);
+            AbilityUtils.ApplySpeedModifier(target, targetState, speedMultiplier, config.DurationSeconds);
             AbilityUtils.ApplyKnockbackDebuff(targetState, knockbackMultiplier, config.DurationSeconds);
-            target.PrintToChat($"{context.Config.ChatConfig.ZombiePrefix} A hex weakens your movement and knockback.");
+            target.PrintToChat(ChatText.Zombie("A hex weakens your movement and knockback."));
             affected++;
         }
 
         player.PrintToChat(affected > 0
-            ? $"{context.Config.ChatConfig.ZombiePrefix} Cultist Hex affected {affected} human(s)."
-            : $"{context.Config.ChatConfig.ZombiePrefix} Cultist Hex found no humans in range.");
+            ? ChatText.Zombie($"Cultist Hex affected {ChatText.Number(affected)} human(s).")
+            : ChatText.Zombie("Cultist Hex found no humans in range."));
 
         context.PlayerState.SetCooldown(AbilityType.CultistHex, config.CooldownSeconds);
         AbilityUtils.TrackActiveAbilityDuration(player, AbilityType.CultistHex, config.DurationSeconds, context.PlayerState);

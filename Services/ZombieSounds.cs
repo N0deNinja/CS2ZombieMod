@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 
@@ -33,6 +34,64 @@ public static class ZombieSounds
             Console.WriteLine($"[ZombieMod] Failed to emit sound '{soundEventName}': {ex.Message}");
             return false;
         }
+    }
+
+    public static bool EmitToPlayerOnly(CCSPlayerController? player, BaseConfig config, string? soundEventName)
+    {
+        var sound = NormalizeSingle(soundEventName);
+        if (!config.SoundConfig.Enabled || sound == null || player == null || !player.IsValid)
+            return false;
+
+        CBaseEntity? emitter = player.PlayerPawn.Value;
+        if (emitter == null || !emitter.IsValid)
+            emitter = player;
+
+        try
+        {
+            emitter.EmitSound(
+                sound,
+                recipients: new RecipientFilter(player),
+                volume: Math.Clamp(config.SoundConfig.EmitVolume, 0.0f, 2.0f),
+                pitch: Math.Clamp(config.SoundConfig.EmitPitch, 0.1f, 3.0f));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ZombieMod] Failed to emit player-only sound '{sound}': {ex.Message}");
+            return false;
+        }
+    }
+
+    public static CBaseEntity? StartWorldSound(Vector position, BaseConfig config, string? soundEventName)
+    {
+        var sound = NormalizeSingle(soundEventName);
+        if (!config.SoundConfig.Enabled || sound == null)
+            return null;
+
+        var soundPoint = Utilities.CreateEntityByName<CBaseEntity>("snd_event_point")
+            ?? Utilities.CreateEntityByName<CBaseEntity>("point_soundevent");
+        if (soundPoint == null || !soundPoint.IsValid)
+            return null;
+
+        try
+        {
+            soundPoint.Teleport(position, null, null);
+            soundPoint.DispatchSpawn();
+            soundPoint.AcceptInput("SetSoundEventName", value: sound);
+            soundPoint.AcceptInput("StartSound");
+            return soundPoint;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ZombieMod] Failed to start world sound '{sound}': {ex.Message}");
+            StopSoundEntity(soundPoint);
+            return null;
+        }
+    }
+
+    public static void StopWorldSound(CBaseEntity? soundPoint)
+    {
+        StopSoundEntity(soundPoint);
     }
 
     public static bool Emit(CCSPlayerController? player, BaseConfig config, string? soundEventName)

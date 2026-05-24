@@ -7,6 +7,10 @@ namespace ZombieModPlugin.Abilities.Utils;
 
 public static class AbilityUtils
 {
+    private const float SpeedModifierRefreshIntervalSeconds = 0.1f;
+    private const float MinVelocityModifier = 0.05f;
+    private const float MaxVelocityModifier = 4.0f;
+
     /// <summary>
     /// Safely runs a temporary effect on a player with automatic revert after duration.
     /// </summary>
@@ -63,19 +67,135 @@ public static class AbilityUtils
     }
 
 
-    public static void ApplySpeedBoost(CCSPlayerController player, float multiplier, float duration)
+    public static void ApplySpeedBoost(CCSPlayerController player, PlayerState state, float multiplier, float duration)
     {
-        ApplySpeedModifier(player, multiplier, duration);
+        ApplySpeedModifier(player, state, multiplier, duration);
+    }
+
+    public static void ApplySpeedModifier(CCSPlayerController player, PlayerState state, float multiplier, float duration)
+    {
+        if (!player.IsValid)
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        duration = Math.Max(0.0f, duration);
+        if (duration <= 0.0f)
+            return;
+
+        multiplier = Math.Clamp(multiplier, MinVelocityModifier, MaxVelocityModifier);
+        var effectId = Guid.NewGuid();
+        var version = state.TimedSpeedModifierVersion;
+
+        if (state.TimedSpeedModifierMultipliers.Count == 0 || state.TimedSpeedModifierBase == null)
+            state.TimedSpeedModifierBase = Math.Clamp(pawn.VelocityModifier, MinVelocityModifier, MaxVelocityModifier);
+
+        state.TimedSpeedModifierMultipliers[effectId] = multiplier;
+        ApplyManagedSpeedModifier(player, state, version);
+        ScheduleSpeedModifierRefresh(player, state, effectId, DateTime.UtcNow.AddSeconds(duration), version);
+        ScheduleSpeedModifierExpiration(player, state, effectId, duration, version);
     }
 
     public static void ApplySpeedModifier(CCSPlayerController player, float multiplier, float duration)
     {
+        var originalVelocityModifier = 1.0f;
         RunTimedEffect(
             player,
             duration,
-            apply: pawn => pawn.VelocityModifier *= multiplier,
-            revert: pawn => pawn.VelocityModifier /= multiplier
+            apply: pawn =>
+            {
+                originalVelocityModifier = pawn.VelocityModifier;
+                pawn.VelocityModifier = Math.Clamp(
+                    originalVelocityModifier * multiplier,
+                    MinVelocityModifier,
+                    MaxVelocityModifier);
+            },
+            revert: pawn => pawn.VelocityModifier = originalVelocityModifier
         );
+    }
+
+    private static void ScheduleSpeedModifierRefresh(
+        CCSPlayerController player,
+        PlayerState state,
+        Guid effectId,
+        DateTime expiresAtUtc,
+        int version)
+    {
+        _ = Task.Delay(TimeSpan.FromSeconds(SpeedModifierRefreshIntervalSeconds)).ContinueWith(_ =>
+        {
+            Server.NextFrame(() =>
+            {
+                if (state.TimedSpeedModifierVersion != version
+                    || !state.TimedSpeedModifierMultipliers.ContainsKey(effectId)
+                    || DateTime.UtcNow >= expiresAtUtc)
+                {
+                    return;
+                }
+
+                ApplyManagedSpeedModifier(player, state, version);
+                ScheduleSpeedModifierRefresh(player, state, effectId, expiresAtUtc, version);
+            });
+        });
+    }
+
+    private static void ScheduleSpeedModifierExpiration(
+        CCSPlayerController player,
+        PlayerState state,
+        Guid effectId,
+        float duration,
+        int version)
+    {
+        _ = Task.Delay(TimeSpan.FromSeconds(duration)).ContinueWith(_ =>
+        {
+            Server.NextFrame(() =>
+            {
+                if (state.TimedSpeedModifierVersion != version)
+                    return;
+
+                if (!state.TimedSpeedModifierMultipliers.Remove(effectId))
+                    return;
+
+                ApplyManagedSpeedModifier(player, state, version);
+            });
+        });
+    }
+
+    private static void ApplyManagedSpeedModifier(CCSPlayerController player, PlayerState state, int version)
+    {
+        if (state.TimedSpeedModifierVersion != version)
+            return;
+
+        if (!player.IsValid)
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        var baseModifier = Math.Clamp(
+            state.TimedSpeedModifierBase ?? pawn.VelocityModifier,
+            MinVelocityModifier,
+            MaxVelocityModifier);
+
+        if (state.TimedSpeedModifierMultipliers.Count == 0)
+        {
+            pawn.VelocityModifier = baseModifier;
+            state.TimedSpeedModifierBase = null;
+            pawn.MarkMovementStateChanged();
+            return;
+        }
+
+        var combinedMultiplier = 1.0f;
+        foreach (var activeMultiplier in state.TimedSpeedModifierMultipliers.Values)
+            combinedMultiplier *= activeMultiplier;
+
+        pawn.VelocityModifier = Math.Clamp(
+            baseModifier * combinedMultiplier,
+            MinVelocityModifier,
+            MaxVelocityModifier);
+        pawn.MarkMovementStateChanged();
     }
 
     public static void ApplyHealthRegen(CCSPlayerController player, int healPerTick, float duration, float interval, int maxHealth)
