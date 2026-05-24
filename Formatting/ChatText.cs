@@ -1,4 +1,5 @@
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.Chat;
 
 namespace ZombieModPlugin.Formatting;
 
@@ -17,11 +18,11 @@ public static class ChatText
     public static string Error(string message) => $"{ChatColors.Red}[ZM]{ChatColors.Default} {message}";
     public static string Admin(string message) => $"{AdminPrefix} {message}";
 
-    public static string Money(int amount) => $"{ChatColors.Lime}${amount}{ChatColors.Default}";
-    public static string Number(int value) => $"{ChatColors.Lime}{value}{ChatColors.Default}";
-    public static string Command(string command) => $"{ChatColors.Lime}{command}{ChatColors.Default}";
-    public static string Good(string message) => $"{ChatColors.Lime}{message}{ChatColors.Default}";
-    public static string Warn(string message) => $"{ChatColors.Yellow}{message}{ChatColors.Default}";
-    public static string Bad(string message) => $"{ChatColors.Red}{message}{ChatColors.Default}";
-    public static string Name(string message) => $"{ChatColors.LightBlue}{message}{ChatColors.Default}";
+    public static string Money(int amount) => ReclaimChatText.Money(amount);
+    public static string Number(int value) => ReclaimChatText.Number(value);
+    public static string Command(string command) => ReclaimChatText.Command(command);
+    public static string Good(string message) => ReclaimChatText.Good(message);
+    public static string Warn(string message) => ReclaimChatText.Warn(message);
+    public static string Bad(string message) => ReclaimChatText.Bad(message);
+    public static string Name(string message) => ReclaimChatText.Class(message);
 }

@@ -2,6 +2,19 @@
 
 CounterStrikeSharp plugin for a local Counter-Strike 2 zombie mod prototype.
 
+## Unified Workspace
+
+This repo is intended to sit beside the COD plugin and shared library:
+
+```text
+C:\Users\hoppi\ReclaimCS
+  reclaimcs-cod
+  reclaimcs-zombie
+  reclaimcs-shared
+```
+
+`ZombieModPlugin.csproj` references `..\reclaimcs-shared\src\ReclaimCS.Shared\ReclaimCS.Shared.csproj` for shared chat formatting, CounterStrikeSharp player/pawn helpers, and SQLite primitives. Zombie-specific infection, round, ability, shop, and progression logic stays in this repo.
+
 ## Local CS2 Server Tooling
 
 These scripts install and use one repo-local CS2 dedicated server under `server/`.

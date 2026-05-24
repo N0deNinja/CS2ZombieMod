@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.CounterStrike;
 using ZombieModPlugin.States;
 
 namespace ZombieModPlugin.Extensions;
@@ -23,33 +24,12 @@ public static class PlayerExtensions
 
     public static ulong GetStateKey(this CCSPlayerController player)
     {
-        if (!player.IsValid)
-            throw new InvalidOperationException("Invalid player");
-
-        if (!player.IsBot)
-            return player.SteamID;
-
-        var userId = Convert.ToUInt64(player.UserId);
-        return BotStateKeyPrefix | userId;
+        return PlayerIdentityExtensions.GetRuntimeKey(player, BotStateKeyPrefix);
     }
 
     public static void ForceTeamState(this CCSPlayerController player, CsTeam team)
     {
-        if (!player.IsValid)
-            return;
-
-        var teamNum = (byte)team;
-        player.TeamNum = teamNum;
-        player.InitialTeamNum = (int)team;
-        player.MarkTeamStateChanged();
-
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !pawn.IsValid)
-            return;
-
-        pawn.TeamNum = teamNum;
-        pawn.InitialTeamNum = (int)team;
-        pawn.MarkTeamStateChanged();
+        PlayerIdentityExtensions.ForceTeamState(player, team);
     }
 
     public static List<CCSPlayerController> GetPlayersInProximity(
@@ -57,36 +37,6 @@ public static class PlayerExtensions
      IEnumerable<CCSPlayerController> allPlayers,
      float radius)
     {
-        var result = new List<CCSPlayerController>();
-
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || pawn.AbsOrigin == null)
-            return result;
-
-        var origin = pawn.AbsOrigin;
-
-        foreach (var other in allPlayers)
-        {
-            if (other == null || !other.IsValid || other == player)
-                continue;
-
-            var otherPawn = other.PlayerPawn.Value;
-            if (otherPawn == null || otherPawn.AbsOrigin == null)
-                continue;
-
-            var otherOrigin = otherPawn.AbsOrigin;
-
-            float dx = otherOrigin.X - origin.X;
-            float dy = otherOrigin.Y - origin.Y;
-            float dz = otherOrigin.Z - origin.Z;
-            float dist = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
-
-            if (dist <= radius)
-                result.Add(other);
-        }
-
-        return result;
+        return PlayerIdentityExtensions.GetPlayersInProximity(player, allPlayers, radius);
     }
-
-
 }

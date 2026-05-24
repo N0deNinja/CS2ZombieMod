@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using ReclaimCS.Shared.Persistence;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Progression.Models;
 
@@ -11,18 +12,7 @@ public sealed class SqlitePlayerProgressionRepository : IPlayerProgressionReposi
 
     public SqlitePlayerProgressionRepository(string databasePath)
     {
-        var directory = Path.GetDirectoryName(databasePath);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
-
-        var builder = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared
-        };
-
-        _connectionString = builder.ToString();
+        _connectionString = SqliteConnectionFactory.CreateConnectionString(databasePath);
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -172,9 +162,7 @@ public sealed class SqlitePlayerProgressionRepository : IPlayerProgressionReposi
 
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        return connection;
+        return await SqliteConnectionFactory.OpenAsync(_connectionString, cancellationToken);
     }
 
     private static async Task<PlayerProgressionData?> LoadPlayerAsync(
@@ -557,9 +545,7 @@ public sealed class SqlitePlayerProgressionRepository : IPlayerProgressionReposi
         string commandText,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.CommandText = commandText;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteSchema.ExecuteNonQueryAsync(connection, commandText, cancellationToken);
     }
 
     private static async Task EnsureColumnAsync(
@@ -569,22 +555,11 @@ public sealed class SqlitePlayerProgressionRepository : IPlayerProgressionReposi
         string columnDefinition,
         CancellationToken cancellationToken)
     {
-        await using (var check = connection.CreateCommand())
-        {
-            check.CommandText = $"PRAGMA table_info({tableName});";
-            await using var reader = await check.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-                    return;
-            }
-        }
-
-        await ExecuteNonQueryAsync(connection, $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};", cancellationToken);
+        await SqliteSchema.AddColumnIfMissingAsync(connection, null, tableName, columnName, columnDefinition, cancellationToken);
     }
 
     private static long ToSigned(ulong value)
     {
-        return unchecked((long)value);
+        return SqliteSteamId.ToSigned(value);
     }
 }

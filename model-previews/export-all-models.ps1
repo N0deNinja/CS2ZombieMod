@@ -1,7 +1,7 @@
 param(
-    [string]$WorkshopVpk = "C:\Users\hoppi\CS2ZombieMod\server\game\bin\win64\steamapps\workshop\content\730\3170427476\3170427476_dir.vpk",
-    [string]$CliPath = "C:\Users\hoppi\CS2ZombieMod\tools\source2viewer\Source2Viewer-CLI.exe",
-    [string]$PreviewRoot = "C:\Users\hoppi\CS2ZombieMod\model-previews",
+    [string]$WorkshopVpk = "C:\Users\hoppi\ReclaimCS\reclaimcs-zombie\server\game\bin\win64\steamapps\workshop\content\730\3170427476\3170427476_dir.vpk",
+    [string]$CliPath = "C:\Users\hoppi\ReclaimCS\reclaimcs-zombie\tools\source2viewer\Source2Viewer-CLI.exe",
+    [string]$PreviewRoot = "C:\Users\hoppi\ReclaimCS\reclaimcs-zombie\model-previews",
     [switch]$Force
 )
 
