@@ -121,17 +121,18 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
                 _generalHandlers.OnPlayerConnectFullInitState(@event, gameEventInfo)));
         RegisterEventHandler<EventPlayerConnectFull>((@event, gameEventInfo) =>
         {
-            return RunEvent("EventPlayerConnectFull.round-and-tags", @event.Userid, () =>
+            var player = @event.Userid;
+            return RunEvent("EventPlayerConnectFull.round-and-tags", player, () =>
             {
                 _detailedTickLogUntilUtc = DateTime.UtcNow.AddSeconds(12);
 
-                if (@event.Userid != null)
+                if (player != null)
                 {
-                    CrashBreadcrumbs.Log($"connect-full round manager start {CrashBreadcrumbs.DescribePlayer(@event.Userid)}");
-                    _roundManager.OnPlayablePlayerConnected(@event.Userid);
-                    CrashBreadcrumbs.Log($"connect-full round manager end {CrashBreadcrumbs.DescribePlayer(@event.Userid)}");
+                    CrashBreadcrumbs.Log($"connect-full round manager start {CrashBreadcrumbs.DescribePlayer(player)}");
+                    _roundManager.OnPlayablePlayerConnected(player);
+                    CrashBreadcrumbs.Log($"connect-full round manager end {CrashBreadcrumbs.DescribePlayer(player)}");
 
-                    CrashBreadcrumbs.SafeNextFrame("connect-full name tag apply", () => ApplyPlayerNameTag(@event.Userid, "connect-full", detailed: true));
+                    CrashBreadcrumbs.SafeNextFrame("connect-full name tag apply", () => ApplyPlayerNameTag(player, "connect-full", detailed: true));
                 }
 
                 return HookResult.Continue;
