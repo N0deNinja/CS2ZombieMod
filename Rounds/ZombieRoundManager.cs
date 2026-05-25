@@ -1482,18 +1482,10 @@ public class ZombieRoundManager
     private string[] GetWorkshopAddonIdsForMapIndex(int activeMapIndex)
     {
         var orderedIds = new List<string>();
-        var mapIds = _config.GeneralConfig.WorkshopMapIds ?? [];
-
-        if (activeMapIndex >= 0 && activeMapIndex < mapIds.Length)
-            AddWorkshopAddonId(orderedIds, mapIds[activeMapIndex]);
-
         foreach (var addonId in _config.GeneralConfig.WorkshopAddonIds ?? [])
             AddWorkshopAddonId(orderedIds, addonId);
 
         AddWorkshopAddonId(orderedIds, ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId);
-
-        foreach (var addonId in mapIds)
-            AddWorkshopAddonId(orderedIds, addonId);
 
         return orderedIds.ToArray();
     }

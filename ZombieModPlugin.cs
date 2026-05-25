@@ -302,22 +302,10 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
     private string[] GetWorkshopAddonIdsForMap(string mapName)
     {
         var orderedIds = new List<string>();
-        var mapIds = Config.GeneralConfig.WorkshopMapIds ?? [];
-        var mapNames = Config.GeneralConfig.WorkshopMapNames ?? [];
-        var mapIndex = Array.FindIndex(
-            mapNames,
-            name => string.Equals(name?.Trim(), mapName, StringComparison.OrdinalIgnoreCase));
-
-        if (mapIndex >= 0 && mapIndex < mapIds.Length)
-            AddWorkshopAddonId(orderedIds, mapIds[mapIndex]);
-
         foreach (var addonId in Config.GeneralConfig.WorkshopAddonIds ?? [])
             AddWorkshopAddonId(orderedIds, addonId);
 
         AddWorkshopAddonId(orderedIds, ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId);
-
-        foreach (var addonId in mapIds)
-            AddWorkshopAddonId(orderedIds, addonId);
 
         return orderedIds.ToArray();
     }
