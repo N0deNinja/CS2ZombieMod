@@ -107,7 +107,7 @@ ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; mkdir -p '%REMOTE_PLUGINS_DI
 if errorlevel 1 exit /b 1
 
 echo [ssh-deploy] Quarantining stale COD plugin from Zombie server install if present...
-ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; if [ -d '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' ]; then mv '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' '%REMOTE_PLUGINS_DIR%/.ReclaimCsCod.disabled-$(date +%%Y%%m%%d%%H%%M%%S)'; fi"
+ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; if [ -d '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' ]; then ts=$(date +%%Y%%m%%d%%H%%M%%S); mkdir -p '%REMOTE_PLUGINS_DIR%/../disabled-plugins'; mv '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' '%REMOTE_PLUGINS_DIR%/../disabled-plugins/ReclaimCsCod.disabled-'$ts; fi"
 if errorlevel 1 exit /b 1
 
 if defined ZM_REMOTE_POST_DEPLOY_COMMAND (
