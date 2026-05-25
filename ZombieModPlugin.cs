@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
 using ReclaimCS.Shared.Administration;
 using ReclaimCS.Shared.CounterStrike;
+using ReclaimCS.Shared.Menus;
 using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
@@ -40,6 +41,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
     private ZombieRoundManager? _roundManager;
     private ProgressionService? _progressionService;
     private PlayerNameTagService? _playerNameTagService;
+    private CenterHtmlHintFlashFixService? _centerHtmlHintFlashFixService;
     private string _currentMapName = string.Empty;
 
     public BaseConfig Config { get; set; } = null!;
@@ -87,6 +89,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         _roundManager = new ZombieRoundManager(_playerStates, Config, zombieHandler, humanHandler, zombieMeleeVisualService, progressionService, blockadeService);
         _adminTestHandler = new AdminTestHandler(_playerStates, Config, this, zombieHandler, humanHandler, _roundManager, progressionService);
         _playerNameTagService = new PlayerNameTagService(() => Config.Admin);
+        _centerHtmlHintFlashFixService = new CenterHtmlHintFlashFixService();
         _abilityHandler.RegisterCommands();
         _progressionCommandHandler.RegisterCommands();
         _humanShopCommandHandler.RegisterCommands();
@@ -119,6 +122,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         {
             _currentMapName = mapName;
             Console.WriteLine($"[ZombieMod] Map started: {mapName}. Applying Zombie Mod server rules.");
+            _centerHtmlHintFlashFixService?.OnMapStart();
             _roundManager?.OnMapStarted(mapName);
             ScheduleWorkshopAddonDownloadRetry();
             Server.NextFrame(ApplyPlayerNameTags);
@@ -155,6 +159,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     private void OnTick()
     {
+        _centerHtmlHintFlashFixService?.Update();
         ApplyPlayerNameTags();
     }
 
