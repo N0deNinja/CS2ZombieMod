@@ -10,6 +10,7 @@ rem   ZM_SSH_KEY=C:\path\to\key
 rem   ZM_SSH_USER=root
 rem   ZM_SSH_HOST=178.105.156.187
 rem   ZM_REMOTE_PLUGINS_DIR=/root/server/game/csgo/addons/counterstrikesharp/plugins
+rem   ZM_REMOTE_GAME_CFG_DIR=/root/server/game/csgo/cfg
 rem   ZM_DEPLOY_DRY_RUN=1
 rem   ZM_REMOTE_POST_DEPLOY_COMMAND=systemctl restart cs2
 rem
@@ -19,17 +20,20 @@ rem data/ directory and never copying local data/*.db files over it.
 set "ROOT=%~dp0"
 set "LOCAL_DEPLOY_SCRIPT=%ROOT%build-and-deploy.bat"
 set "SHARED_ADMIN_CONFIG_DIR=%ROOT%..\reclaimcs-shared\configs\counterstrikesharp"
+set "LOCAL_MULTIADDON_CONFIG=%ROOT%server-config\multiaddonmanager.cfg"
 set "CONFIGURATION=%BUILD_CONFIGURATION%"
 set "SSH_KEY=%ZM_SSH_KEY%"
 set "SSH_USER=%ZM_SSH_USER%"
 set "SSH_HOST=%ZM_SSH_HOST%"
 set "REMOTE_PLUGINS_DIR=%ZM_REMOTE_PLUGINS_DIR%"
+set "REMOTE_GAME_CFG_DIR=%ZM_REMOTE_GAME_CFG_DIR%"
 
 if "%CONFIGURATION%"=="" set "CONFIGURATION=Release"
 if "%SSH_KEY%"=="" set "SSH_KEY=%USERPROFILE%\.ssh\id_ed25519"
 if "%SSH_USER%"=="" set "SSH_USER=root"
 if "%SSH_HOST%"=="" set "SSH_HOST=178.105.156.187"
 if "%REMOTE_PLUGINS_DIR%"=="" set "REMOTE_PLUGINS_DIR=/root/server/game/csgo/addons/counterstrikesharp/plugins"
+if "%REMOTE_GAME_CFG_DIR%"=="" set "REMOTE_GAME_CFG_DIR=/root/server/game/csgo/cfg"
 
 if not exist "%LOCAL_DEPLOY_SCRIPT%" (
     echo [error] Local deploy script was not found: "%LOCAL_DEPLOY_SCRIPT%"
@@ -92,6 +96,7 @@ if "%ZM_DEPLOY_DRY_RUN%"=="1" (
     echo [ssh-deploy] Dry run enabled. SSH copy was skipped.
     echo [ssh-deploy] Would stage to: %REMOTE_STAGE_DIR%
     echo [ssh-deploy] Would replace:  %REMOTE_PLUGIN_DIR%
+    echo [ssh-deploy] Would sync MultiAddonManager config to: %REMOTE_GAME_CFG_DIR%/multiaddonmanager/multiaddonmanager.cfg
     exit /b 0
 )
 
@@ -117,6 +122,16 @@ if not exist "%SHARED_ADMIN_CONFIG_DIR%\admins.json" (
     ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "mkdir -p '%REMOTE_CONFIG_DIR%'"
     if errorlevel 1 exit /b 1
     scp -i "%SSH_KEY%" "%SHARED_ADMIN_CONFIG_DIR%\admins.json" "%SHARED_ADMIN_CONFIG_DIR%\admin_groups.json" "%SSH_USER%@%SSH_HOST%:%REMOTE_CONFIG_DIR%/"
+    if errorlevel 1 exit /b 1
+)
+
+if not exist "%LOCAL_MULTIADDON_CONFIG%" (
+    echo [warn] Zombie MultiAddonManager config was not found: "%LOCAL_MULTIADDON_CONFIG%"
+) else (
+    echo [ssh-deploy] Syncing Zombie MultiAddonManager config...
+    ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "mkdir -p '%REMOTE_GAME_CFG_DIR%/multiaddonmanager'"
+    if errorlevel 1 exit /b 1
+    scp -i "%SSH_KEY%" "%LOCAL_MULTIADDON_CONFIG%" "%SSH_USER%@%SSH_HOST%:%REMOTE_GAME_CFG_DIR%/multiaddonmanager/multiaddonmanager.cfg"
     if errorlevel 1 exit /b 1
 )
 
