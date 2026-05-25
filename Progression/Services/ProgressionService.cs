@@ -3,6 +3,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
+using ZombieModPlugin.Diagnostics;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Humans.Models;
@@ -42,11 +43,13 @@ public sealed class ProgressionService
 
     public void BeginLoadPlayer(CCSPlayerController player, PlayerState state)
     {
+        CrashBreadcrumbs.Log($"progression load start {CrashBreadcrumbs.DescribePlayer(player)} enabled={_config.ProgressionConfig.Enabled}");
         EnsureRuntimeDefaults(state);
 
         if (player.IsBot || !_config.ProgressionConfig.Enabled)
         {
             state.ProgressionLoaded = true;
+            CrashBreadcrumbs.Log($"progression load skipped bot-or-disabled {CrashBreadcrumbs.DescribePlayer(player)}");
             return;
         }
 
@@ -57,26 +60,36 @@ public sealed class ProgressionService
         {
             try
             {
+                CrashBreadcrumbs.Log($"progression load task start steam={steamId} name=\"{playerName}\"");
                 var data = await _repository.LoadAsync(steamId) ?? CreateNewProgressionData(steamId, playerName);
+                CrashBreadcrumbs.Log($"progression repository load end steam={steamId} name=\"{playerName}\"");
                 data.PlayerName = playerName;
 
-                Server.NextFrame(() =>
+                CrashBreadcrumbs.SafeNextFrame($"progression apply steam={steamId}", () =>
                 {
                     if (!player.IsValid)
+                    {
+                        CrashBreadcrumbs.Log($"progression apply skipped invalid steam={steamId}");
                         return;
+                    }
 
+                    CrashBreadcrumbs.Log($"progression ApplyProgressionData start {CrashBreadcrumbs.DescribePlayer(player)}");
                     ApplyProgressionData(state, data);
                     state.ProgressionLoaded = true;
+                    CrashBreadcrumbs.Log($"progression ApplyInGameMoney start {CrashBreadcrumbs.DescribePlayer(player)}");
                     ApplyInGameMoney(player, state);
+                    CrashBreadcrumbs.Log($"progression SavePlayerFireAndForget start {CrashBreadcrumbs.DescribePlayer(player)}");
                     SavePlayerFireAndForget(player, state);
 
                     player.PrintToChat($"{ChatColors.LightPurple}[ZM]{ChatColors.Default} Progress loaded: {ChatColors.Gold}Level {state.GlobalLevel}{ChatColors.Default} | Money {ChatColors.Lime}${state.Money}{ChatColors.Default}.");
+                    CrashBreadcrumbs.Log($"progression apply end {CrashBreadcrumbs.DescribePlayer(player)} level={state.GlobalLevel} money={state.Money}");
                 });
             }
             catch (Exception ex)
             {
+                CrashBreadcrumbs.LogException($"progression load task steam={steamId} name=\"{playerName}\"", ex);
                 Console.WriteLine($"[ZombieMod] Failed to load progression for {playerName} ({steamId}): {ex}");
-                Server.NextFrame(() =>
+                CrashBreadcrumbs.SafeNextFrame($"progression failure notify steam={steamId}", () =>
                 {
                     if (player.IsValid)
                         player.PrintToChat($"{ChatColors.Red}[ZM]{ChatColors.Default} Progression failed to load; using temporary defaults this session.");
@@ -959,11 +972,13 @@ public sealed class ProgressionService
         if (player.InGameMoneyServices == null)
             return;
 
+        CrashBreadcrumbs.Log($"progression native money write start money={money} {CrashBreadcrumbs.DescribePlayer(player)}");
         player.InGameMoneyServices.Account = money;
         player.InGameMoneyServices.StartAccount = money;
         player.MarkMoneyStateChanged();
         state.LastAppliedNativeMoney = money;
         state.NativeMoneySyncReady = player.InGameMoneyServices.Account == money;
+        CrashBreadcrumbs.Log($"progression native money write end money={money} {CrashBreadcrumbs.DescribePlayer(player)}");
     }
 
     private static void TryRequestNativeMoneyHud(CCSPlayerController player, PlayerState state)

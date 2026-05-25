@@ -11,6 +11,7 @@ using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
 using ZombieModPlugin.Blockades;
 using ZombieModPlugin.Configs;
+using ZombieModPlugin.Diagnostics;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Handlers;
 using ZombieModPlugin.Humans.Handlers;
@@ -43,6 +44,11 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
     private PlayerNameTagService? _playerNameTagService;
     private CenterHtmlHintFlashFixService? _centerHtmlHintFlashFixService;
     private string _currentMapName = string.Empty;
+    private DateTime _loadedAtUtc;
+    private DateTime _detailedTickLogUntilUtc;
+    private DateTime _nextStartupTickBreadcrumbAtUtc;
+    private int _tickCount;
+    private int _startupTickBreadcrumbs;
 
     public BaseConfig Config { get; set; } = null!;
 
@@ -56,6 +62,12 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     public override void Load(bool hotReload)
     {
+        CrashBreadcrumbs.Configure(ModulePath);
+        CrashBreadcrumbs.SessionStart(ModuleVersion, hotReload);
+        _loadedAtUtc = DateTime.UtcNow;
+        _detailedTickLogUntilUtc = _loadedAtUtc.AddSeconds(20);
+        CrashBreadcrumbs.Log("Load start");
+
         var progressionRepository = new SqlitePlayerProgressionRepository(ResolveDatabasePath(Config.ProgressionConfig.Database.FilePath));
         var progressionLevelService = new ProgressionLevelService();
         var progressionUnlockService = new ProgressionUnlockService(Config);
@@ -90,50 +102,87 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         _adminTestHandler = new AdminTestHandler(_playerStates, Config, this, zombieHandler, humanHandler, _roundManager, progressionService);
         _playerNameTagService = new PlayerNameTagService(() => Config.Admin);
         _centerHtmlHintFlashFixService = new CenterHtmlHintFlashFixService();
+        CrashBreadcrumbs.Log("services constructed");
+
         _abilityHandler.RegisterCommands();
+        CrashBreadcrumbs.Log("commands registered: ability");
         _progressionCommandHandler.RegisterCommands();
+        CrashBreadcrumbs.Log("commands registered: progression");
         _humanShopCommandHandler.RegisterCommands();
+        CrashBreadcrumbs.Log("commands registered: human shop");
         blockadeService.RegisterCommands();
+        CrashBreadcrumbs.Log("commands registered: blockade");
         _adminTestHandler.RegisterCommands();
 
-        RegisterEventHandler<EventPlayerConnectFull>(_generalHandlers.OnPlayerConnectFullInitState);
+        CrashBreadcrumbs.Log("commands registered: admin");
+
+        RegisterEventHandler<EventPlayerConnectFull>((@event, gameEventInfo) =>
+            RunEvent("EventPlayerConnectFull.init-state", @event.Userid, () =>
+                _generalHandlers.OnPlayerConnectFullInitState(@event, gameEventInfo)));
         RegisterEventHandler<EventPlayerConnectFull>((@event, gameEventInfo) =>
         {
-            if (@event.Userid != null)
+            return RunEvent("EventPlayerConnectFull.round-and-tags", @event.Userid, () =>
             {
-                _roundManager.OnPlayablePlayerConnected(@event.Userid);
-                Server.NextFrame(() => _playerNameTagService?.Apply(@event.Userid));
-            }
+                _detailedTickLogUntilUtc = DateTime.UtcNow.AddSeconds(12);
 
-            return HookResult.Continue;
+                if (@event.Userid != null)
+                {
+                    CrashBreadcrumbs.Log($"connect-full round manager start {CrashBreadcrumbs.DescribePlayer(@event.Userid)}");
+                    _roundManager.OnPlayablePlayerConnected(@event.Userid);
+                    CrashBreadcrumbs.Log($"connect-full round manager end {CrashBreadcrumbs.DescribePlayer(@event.Userid)}");
+
+                    CrashBreadcrumbs.SafeNextFrame("connect-full name tag apply", () => ApplyPlayerNameTag(@event.Userid, "connect-full", detailed: true));
+                }
+
+                return HookResult.Continue;
+            });
         });
-        RegisterEventHandler<EventRoundStart>(_roundManager.OnRoundStart);
-        RegisterEventHandler<EventPlayerSpawned>(_roundManager.OnPlayerSpawned);
-        RegisterEventHandler<EventItemPickup>(_roundManager.OnItemPickup, HookMode.Pre);
-        RegisterEventHandler<EventWeaponFire>(_roundManager.OnWeaponFire);
-        RegisterEventHandler<EventPlayerDeath>(_roundManager.OnPlayerDeath);
-        RegisterEventHandler<EventRoundEnd>(_roundManager.OnRoundEnd);
-        RegisterListener<Listeners.OnServerPrecacheResources>(OnServerPrecacheResources);
-        RegisterListener<Listeners.OnPlayerTakeDamagePre>(_roundManager.OnPlayerTakeDamagePre);
-        RegisterListener<Listeners.OnTick>(_roundManager.OnTick);
+        RegisterEventHandler<EventRoundStart>((@event, gameEventInfo) =>
+            RunEvent("EventRoundStart", null, () => _roundManager.OnRoundStart(@event, gameEventInfo)));
+        RegisterEventHandler<EventPlayerSpawned>((@event, gameEventInfo) =>
+            RunEvent("EventPlayerSpawned", @event.Userid, () => _roundManager.OnPlayerSpawned(@event, gameEventInfo)));
+        RegisterEventHandler<EventItemPickup>((@event, gameEventInfo) =>
+            RunEvent("EventItemPickup", @event.Userid, () => _roundManager.OnItemPickup(@event, gameEventInfo)), HookMode.Pre);
+        RegisterEventHandler<EventWeaponFire>((@event, gameEventInfo) =>
+            RunEvent("EventWeaponFire", @event.Userid, () => _roundManager.OnWeaponFire(@event, gameEventInfo)));
+        RegisterEventHandler<EventPlayerDeath>((@event, gameEventInfo) =>
+            RunEvent("EventPlayerDeath", @event.Userid, () => _roundManager.OnPlayerDeath(@event, gameEventInfo)));
+        RegisterEventHandler<EventRoundEnd>((@event, gameEventInfo) =>
+            RunEvent("EventRoundEnd", null, () => _roundManager.OnRoundEnd(@event, gameEventInfo)));
+        RegisterListener<Listeners.OnServerPrecacheResources>(manifest =>
+            RunAction("OnServerPrecacheResources", () => OnServerPrecacheResources(manifest)));
+        RegisterListener<Listeners.OnPlayerTakeDamagePre>((victimPawn, damageInfo) =>
+            RunEvent("OnPlayerTakeDamagePre", null, () => _roundManager.OnPlayerTakeDamagePre(victimPawn, damageInfo)));
+        RegisterListener<Listeners.OnTick>(() =>
+            RunAction("RoundManager.OnTick", _roundManager.OnTick, logStartAndEnd: ShouldLogTickBreadcrumb()));
         RegisterListener<Listeners.OnTick>(OnTick);
-        RegisterListener<Listeners.OnPlayerButtonsChanged>(_roundManager.OnPlayerButtonsChanged);
+        RegisterListener<Listeners.OnPlayerButtonsChanged>((player, pressed, released) =>
+            RunAction(
+                $"OnPlayerButtonsChanged pressed={pressed} released={released} {CrashBreadcrumbs.DescribePlayer(player)}",
+                () => _roundManager.OnPlayerButtonsChanged(player, pressed, released),
+                logStartAndEnd: true));
         RegisterListener<Listeners.OnMapStart>(mapName =>
         {
-            _currentMapName = mapName;
-            Console.WriteLine($"[ZombieMod] Map started: {mapName}. Applying Zombie Mod server rules.");
-            _centerHtmlHintFlashFixService?.OnMapStart();
-            _roundManager?.OnMapStarted(mapName);
-            ScheduleWorkshopAddonDownloadRetry();
-            Server.NextFrame(ApplyPlayerNameTags);
-            Server.NextFrame(() =>
+            RunAction($"OnMapStart map={mapName}", () =>
             {
-                _roundManager?.ApplyZombieServerRules();
-                _roundManager?.EnsureRoundLifecycleRunning();
+                _currentMapName = mapName;
+                _detailedTickLogUntilUtc = DateTime.UtcNow.AddSeconds(20);
+                Console.WriteLine($"[ZombieMod] Map started: {mapName}. Applying Zombie Mod server rules.");
+                CrashBreadcrumbs.Log($"center hint OnMapStart start map={mapName}");
+                _centerHtmlHintFlashFixService?.OnMapStart();
+                CrashBreadcrumbs.Log($"center hint OnMapStart end map={mapName}");
+                _roundManager?.OnMapStarted(mapName);
+                ScheduleWorkshopAddonDownloadRetry();
+                CrashBreadcrumbs.SafeNextFrame("map-start apply player name tags", () => ApplyPlayerNameTags("map-start", detailed: true));
+                CrashBreadcrumbs.SafeNextFrame("map-start server rules", () =>
+                {
+                    _roundManager?.ApplyZombieServerRules();
+                    _roundManager?.EnsureRoundLifecycleRunning();
+                });
             });
         });
 
-        Server.NextFrame(() =>
+        CrashBreadcrumbs.SafeNextFrame("load startup server rules", () =>
         {
             _roundManager.ApplyZombieServerRules();
             _roundManager.EnsureRoundLifecycleRunning();
@@ -145,31 +194,82 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
                     progressionService.BeginLoadPlayer(player, state);
             }
 
-            ApplyPlayerNameTags();
+            ApplyPlayerNameTags("load-startup", detailed: true);
         });
 
         RegisterTaggedChatCommandListeners();
+        CrashBreadcrumbs.Log("tagged chat command listeners registered");
+        CrashBreadcrumbs.Log("Load end");
     }
 
     public override void Unload(bool hotReload)
     {
+        CrashBreadcrumbs.Log($"Unload start hotReload={hotReload}");
         _blockadeService?.ClearAll();
         _progressionService?.SaveAllConnectedPlayers();
+        CrashBreadcrumbs.Log($"Unload end hotReload={hotReload}");
     }
 
     private void OnTick()
     {
-        _centerHtmlHintFlashFixService?.Update();
-        ApplyPlayerNameTags();
+        var logTick = ShouldLogTickBreadcrumb();
+        if (logTick)
+            CrashBreadcrumbs.Log($"OnTick start tick={_tickCount} map={_currentMapName}");
+
+        try
+        {
+            if (logTick)
+                CrashBreadcrumbs.Log("center hint Update start");
+
+            _centerHtmlHintFlashFixService?.Update();
+
+            if (logTick)
+                CrashBreadcrumbs.Log("center hint Update end");
+        }
+        catch (Exception ex)
+        {
+            CrashBreadcrumbs.LogException("center hint Update", ex);
+        }
+
+        ApplyPlayerNameTags("tick", logTick);
+
+        if (logTick)
+            CrashBreadcrumbs.Log($"OnTick end tick={_tickCount} map={_currentMapName}");
     }
 
-    private void ApplyPlayerNameTags()
+    private void ApplyPlayerNameTags(string reason, bool detailed)
     {
         if (_playerNameTagService == null)
             return;
 
+        if (detailed)
+            CrashBreadcrumbs.Log($"name tag batch start reason={reason}");
+
         foreach (var player in Utilities.GetPlayers().Where(player => player.IsRealConnectedPlayer(Config.GeneralConfig.IncludeBotsInRound)))
+            ApplyPlayerNameTag(player, reason, detailed);
+
+        if (detailed)
+            CrashBreadcrumbs.Log($"name tag batch end reason={reason}");
+    }
+
+    private void ApplyPlayerNameTag(CCSPlayerController player, string reason, bool detailed)
+    {
+        if (_playerNameTagService == null)
+            return;
+
+        if (detailed)
+            CrashBreadcrumbs.Log($"name tag apply start reason={reason} {CrashBreadcrumbs.DescribePlayer(player)}");
+
+        try
+        {
             _playerNameTagService.Apply(player);
+            if (detailed)
+                CrashBreadcrumbs.Log($"name tag apply end reason={reason} {CrashBreadcrumbs.DescribePlayer(player)}");
+        }
+        catch (Exception ex)
+        {
+            CrashBreadcrumbs.LogException($"name tag apply reason={reason} {CrashBreadcrumbs.DescribePlayer(player)}", ex);
+        }
     }
 
     private void RegisterTaggedChatCommandListeners()
@@ -275,31 +375,50 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     private void ScheduleWorkshopAddonDownloadRetry()
     {
+        CrashBreadcrumbs.Log($"MultiAddonManager schedule start enabled={Config.GeneralConfig.AutoDownloadWorkshopAddons} map={_currentMapName}");
         if (!Config.GeneralConfig.AutoDownloadWorkshopAddons)
             return;
 
         var addonIds = GetWorkshopAddonIdsForMap(_currentMapName);
 
         if (addonIds.Length == 0)
+        {
+            CrashBreadcrumbs.Log($"MultiAddonManager schedule skipped no addons map={_currentMapName}");
             return;
+        }
 
         var addonList = string.Join(",", addonIds);
+        CrashBreadcrumbs.Log($"MultiAddonManager command start mm_extra_addons addons={addonList}");
         Server.ExecuteCommand($"mm_extra_addons \"{addonList}\"");
+        CrashBreadcrumbs.Log($"MultiAddonManager command end mm_extra_addons addons={addonList}");
+        CrashBreadcrumbs.Log($"MultiAddonManager command start mm_client_extra_addons addons={addonList}");
         Server.ExecuteCommand($"mm_client_extra_addons \"{addonList}\"");
+        CrashBreadcrumbs.Log($"MultiAddonManager command end mm_client_extra_addons addons={addonList}");
+        CrashBreadcrumbs.Log("MultiAddonManager command start mm_addon_mount_download 1");
         Server.ExecuteCommand("mm_addon_mount_download 1");
+        CrashBreadcrumbs.Log("MultiAddonManager command end mm_addon_mount_download 1");
+        CrashBreadcrumbs.Log("MultiAddonManager command start mm_cache_clients_with_addons 0");
         Server.ExecuteCommand("mm_cache_clients_with_addons 0");
+        CrashBreadcrumbs.Log("MultiAddonManager command end mm_cache_clients_with_addons 0");
 
         _ = Task.Run(async () =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(12));
-            foreach (var addonId in addonIds)
+            try
             {
-                var capturedAddonId = addonId;
-                Server.NextFrame(() =>
+                await Task.Delay(TimeSpan.FromSeconds(12));
+                foreach (var addonId in addonIds)
                 {
-                    Console.WriteLine($"[ZombieMod] Requesting workshop addon download via MultiAddonManager: {capturedAddonId}");
-                    Server.ExecuteCommand($"mm_download_addon {capturedAddonId}");
-                });
+                    var capturedAddonId = addonId;
+                    CrashBreadcrumbs.SafeNextFrame($"MultiAddonManager mm_download_addon addon={capturedAddonId}", () =>
+                    {
+                        Console.WriteLine($"[ZombieMod] Requesting workshop addon download via MultiAddonManager: {capturedAddonId}");
+                        Server.ExecuteCommand($"mm_download_addon {capturedAddonId}");
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                CrashBreadcrumbs.LogException("MultiAddonManager retry task", ex);
             }
         });
     }
@@ -343,10 +462,63 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     public override void OnAllPluginsLoaded(bool hotReload)
     {
-        Server.NextFrame(() =>
+        CrashBreadcrumbs.Log($"OnAllPluginsLoaded hotReload={hotReload}");
+        CrashBreadcrumbs.SafeNextFrame("OnAllPluginsLoaded server rules", () =>
         {
             _roundManager?.ApplyZombieServerRules();
             _roundManager?.EnsureRoundLifecycleRunning();
         });
+    }
+
+    private HookResult RunEvent(string label, CCSPlayerController? player, Func<HookResult> handler)
+    {
+        CrashBreadcrumbs.Log($"{label} start {CrashBreadcrumbs.DescribePlayer(player)}");
+        try
+        {
+            var result = handler();
+            CrashBreadcrumbs.Log($"{label} end result={result} {CrashBreadcrumbs.DescribePlayer(player)}");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            CrashBreadcrumbs.LogException($"{label} {CrashBreadcrumbs.DescribePlayer(player)}", ex);
+            return HookResult.Continue;
+        }
+    }
+
+    private void RunAction(string label, Action action, bool logStartAndEnd = true)
+    {
+        if (logStartAndEnd)
+            CrashBreadcrumbs.Log($"{label} start");
+
+        try
+        {
+            action();
+            if (logStartAndEnd)
+                CrashBreadcrumbs.Log($"{label} end");
+        }
+        catch (Exception ex)
+        {
+            CrashBreadcrumbs.LogException(label, ex);
+        }
+    }
+
+    private bool ShouldLogTickBreadcrumb()
+    {
+        _tickCount++;
+
+        var now = DateTime.UtcNow;
+        if (now <= _detailedTickLogUntilUtc)
+            return true;
+
+        if (now - _loadedAtUtc > TimeSpan.FromMinutes(2))
+            return false;
+
+        if (_startupTickBreadcrumbs >= 20 || now < _nextStartupTickBreadcrumbAtUtc)
+            return false;
+
+        _startupTickBreadcrumbs++;
+        _nextStartupTickBreadcrumbAtUtc = now.AddSeconds(3);
+        return true;
     }
 }

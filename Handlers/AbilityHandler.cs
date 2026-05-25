@@ -7,6 +7,7 @@ using ReclaimCS.Shared.Visibility;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
 using ZombieModPlugin.Configs;
+using ZombieModPlugin.Diagnostics;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Formatting;
 using ZombieModPlugin.Progression.Services;
@@ -24,6 +25,8 @@ public class AbilityHandler
     private readonly ProgressionService _progressionService;
     private readonly PlayerVisibilityService _visibilityService = new();
     private bool _visibilityHooksRegistered;
+    private int _checkTransmitCallCount;
+    private DateTime _nextCheckTransmitBreadcrumbAtUtc;
 
     public AbilityHandler(
         Dictionary<ulong, PlayerState> playerStates,
@@ -383,17 +386,54 @@ public class AbilityHandler
         if (_visibilityHooksRegistered)
             return;
 
-        _plugin.RegisterListener<Listeners.CheckTransmit>(_visibilityService.OnCheckTransmit);
+        CrashBreadcrumbs.Log("visibility hook registration start");
+        _plugin.RegisterListener<Listeners.CheckTransmit>(OnCheckTransmit);
         _plugin.RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         _visibilityHooksRegistered = true;
+        CrashBreadcrumbs.Log("visibility hook registration end");
+    }
+
+    private void OnCheckTransmit(CCheckTransmitInfoList infoList)
+    {
+        var logCall = ShouldLogCheckTransmitBreadcrumb();
+        if (logCall)
+            CrashBreadcrumbs.Log($"visibility CheckTransmit start call={_checkTransmitCallCount}");
+
+        try
+        {
+            _visibilityService.OnCheckTransmit(infoList);
+            if (logCall)
+                CrashBreadcrumbs.Log($"visibility CheckTransmit end call={_checkTransmitCallCount}");
+        }
+        catch (Exception ex)
+        {
+            CrashBreadcrumbs.LogException($"visibility CheckTransmit call={_checkTransmitCallCount}", ex);
+        }
+    }
+
+    private bool ShouldLogCheckTransmitBreadcrumb()
+    {
+        _checkTransmitCallCount++;
+
+        if (_checkTransmitCallCount <= 10)
+            return true;
+
+        var now = DateTime.UtcNow;
+        if (now < _nextCheckTransmitBreadcrumbAtUtc)
+            return false;
+
+        _nextCheckTransmitBreadcrumbAtUtc = now.AddSeconds(5);
+        return true;
     }
 
     private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo gameEventInfo)
     {
         var player = @event.Userid;
+        CrashBreadcrumbs.Log($"visibility player disconnect start {CrashBreadcrumbs.DescribePlayer(player)}");
         if (player is { IsValid: true })
             _visibilityService.ClearPlayer(player);
 
+        CrashBreadcrumbs.Log($"visibility player disconnect end {CrashBreadcrumbs.DescribePlayer(player)}");
         return HookResult.Continue;
     }
 }
