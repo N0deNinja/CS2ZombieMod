@@ -106,6 +106,10 @@ echo [ssh-deploy] Replacing remote plugin folder...
 ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; mkdir -p '%REMOTE_PLUGINS_DIR%'; rm -rf '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%/data'; if [ -d '%REMOTE_PLUGIN_DIR%/data' ]; then mkdir -p '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'; cp -a '%REMOTE_PLUGIN_DIR%/data' '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%/data'; fi; rm -f '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'/*.db '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'/*.db-shm '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'/*.db-wal; rm -rf '%REMOTE_PLUGIN_DIR%'; mv '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%' '%REMOTE_PLUGIN_DIR%'; rmdir '%REMOTE_STAGE_DIR%' 2>/dev/null || true"
 if errorlevel 1 exit /b 1
 
+echo [ssh-deploy] Quarantining stale COD plugin from Zombie server install if present...
+ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; if [ -d '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' ]; then mv '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' '%REMOTE_PLUGINS_DIR%/.ReclaimCsCod.disabled-$(date +%%Y%%m%%d%%H%%M%%S)'; fi"
+if errorlevel 1 exit /b 1
+
 if defined ZM_REMOTE_POST_DEPLOY_COMMAND (
     echo [ssh-deploy] Running remote post-deploy command...
     ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "%ZM_REMOTE_POST_DEPLOY_COMMAND%"
