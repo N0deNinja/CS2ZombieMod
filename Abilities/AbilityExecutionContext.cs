@@ -1,4 +1,5 @@
 using CounterStrikeSharp.API.Core;
+using ReclaimCS.Shared.Visibility;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Zombies.Models;
@@ -13,6 +14,7 @@ public class AbilityExecutionContext
     public required BaseConfig Config { get; init; }
     public required DateTime ServerTime { get; init; }
     public required Dictionary<ulong, PlayerState> PlayerStates { get; init; }
+    public PlayerVisibilityService? VisibilityService { get; init; }
     public List<CCSPlayerController> AllPlayers { get; init; } = [];
 }
 

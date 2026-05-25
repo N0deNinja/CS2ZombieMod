@@ -1,7 +1,9 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.Visibility;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
 using ZombieModPlugin.Configs;
@@ -20,6 +22,8 @@ public class AbilityHandler
     private readonly BasePlugin _plugin;
     private readonly AbilityManager _abilityManager;
     private readonly ProgressionService _progressionService;
+    private readonly PlayerVisibilityService _visibilityService = new();
+    private bool _visibilityHooksRegistered;
 
     public AbilityHandler(
         Dictionary<ulong, PlayerState> playerStates,
@@ -39,6 +43,7 @@ public class AbilityHandler
     {
         _plugin.AddCommand("css_zability", "Use a zombie ability by id or slot number.", OnUseAbilityCommand);
         _plugin.AddCommand("css_zability_slot", "Use a zombie ability by slot number.", OnUseAbilitySlotCommand);
+        RegisterVisibilityHooks();
     }
 
     private void OnUseAbilityCommand(CCSPlayerController? player, CommandInfo command)
@@ -136,6 +141,7 @@ public class AbilityHandler
             Config = _config,
             ServerTime = DateTime.Now,
             PlayerStates = _playerStates,
+            VisibilityService = _visibilityService,
             AllPlayers = Utilities.GetPlayers()
                 .Where(p => p.IsValid)
                 .ToList()
@@ -370,5 +376,24 @@ public class AbilityHandler
     private static void ReplyError(CommandInfo command, string message)
     {
         command.ReplyToCommand(ChatText.Error(message));
+    }
+
+    private void RegisterVisibilityHooks()
+    {
+        if (_visibilityHooksRegistered)
+            return;
+
+        _plugin.RegisterListener<Listeners.CheckTransmit>(_visibilityService.OnCheckTransmit);
+        _plugin.RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
+        _visibilityHooksRegistered = true;
+    }
+
+    private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo gameEventInfo)
+    {
+        var player = @event.Userid;
+        if (player is { IsValid: true })
+            _visibilityService.ClearPlayer(player);
+
+        return HookResult.Continue;
     }
 }
