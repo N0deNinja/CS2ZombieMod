@@ -18,6 +18,7 @@ rem data/ directory and never copying local data/*.db files over it.
 
 set "ROOT=%~dp0"
 set "LOCAL_DEPLOY_SCRIPT=%ROOT%build-and-deploy.bat"
+set "SHARED_ADMIN_CONFIG_DIR=%ROOT%..\reclaimcs-shared\configs\counterstrikesharp"
 set "CONFIGURATION=%BUILD_CONFIGURATION%"
 set "SSH_KEY=%ZM_SSH_KEY%"
 set "SSH_USER=%ZM_SSH_USER%"
@@ -67,6 +68,7 @@ for %%F in ("%PROJECT_FILE%") do set "PLUGIN_NAME=%%~nF"
 set "LOCAL_PLUGIN_DIR=%ROOT%server\game\csgo\addons\counterstrikesharp\plugins\%PLUGIN_NAME%"
 set "REMOTE_PLUGIN_DIR=%REMOTE_PLUGINS_DIR%/%PLUGIN_NAME%"
 set "REMOTE_STAGE_DIR=%REMOTE_PLUGINS_DIR%/.%PLUGIN_NAME%.upload"
+set "REMOTE_CONFIG_DIR=%REMOTE_PLUGINS_DIR%/../configs"
 
 echo.
 echo [ssh-deploy] Building and deploying Zombie Mod to SSH
@@ -105,6 +107,18 @@ if errorlevel 1 exit /b 1
 echo [ssh-deploy] Replacing remote plugin folder...
 ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; mkdir -p '%REMOTE_PLUGINS_DIR%'; rm -rf '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%/data'; if [ -d '%REMOTE_PLUGIN_DIR%/data' ]; then mkdir -p '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'; cp -a '%REMOTE_PLUGIN_DIR%/data' '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%/data'; fi; rm -f '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'/*.db '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'/*.db-shm '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%'/*.db-wal; rm -rf '%REMOTE_PLUGIN_DIR%'; mv '%REMOTE_STAGE_DIR%/%PLUGIN_NAME%' '%REMOTE_PLUGIN_DIR%'; rmdir '%REMOTE_STAGE_DIR%' 2>/dev/null || true"
 if errorlevel 1 exit /b 1
+
+if not exist "%SHARED_ADMIN_CONFIG_DIR%\admins.json" (
+    echo [warn] Shared admin config was not found: "%SHARED_ADMIN_CONFIG_DIR%"
+) else if not exist "%SHARED_ADMIN_CONFIG_DIR%\admin_groups.json" (
+    echo [warn] Shared admin config was not found: "%SHARED_ADMIN_CONFIG_DIR%"
+) else (
+    echo [ssh-deploy] Syncing shared CounterStrikeSharp admin config...
+    ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "mkdir -p '%REMOTE_CONFIG_DIR%'"
+    if errorlevel 1 exit /b 1
+    scp -i "%SSH_KEY%" "%SHARED_ADMIN_CONFIG_DIR%\admins.json" "%SHARED_ADMIN_CONFIG_DIR%\admin_groups.json" "%SSH_USER%@%SSH_HOST%:%REMOTE_CONFIG_DIR%/"
+    if errorlevel 1 exit /b 1
+)
 
 echo [ssh-deploy] Quarantining stale COD plugin from Zombie server install if present...
 ssh -i "%SSH_KEY%" "%SSH_USER%@%SSH_HOST%" "set -e; if [ -d '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' ]; then ts=$(date +%%Y%%m%%d%%H%%M%%S); mkdir -p '%REMOTE_PLUGINS_DIR%/../disabled-plugins'; mv '%REMOTE_PLUGINS_DIR%/ReclaimCsCod' '%REMOTE_PLUGINS_DIR%/../disabled-plugins/ReclaimCsCod.disabled-'$ts; fi"

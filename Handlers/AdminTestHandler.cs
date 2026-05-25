@@ -1,7 +1,7 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
-using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
+using ReclaimCS.Shared.Administration;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
@@ -770,13 +770,7 @@ public class AdminTestHandler
             return false;
         }
 
-        if (!adminConfig.RequireAdminPermissions || player == null)
-            return true;
-
-        if (adminConfig.RequiredPermissions.Length == 0)
-            return true;
-
-        if (AdminManager.PlayerHasPermissions(player, adminConfig.RequiredPermissions))
+        if (ReclaimAdminService.CanUseAdminFeature(player, _config.Admin))
             return true;
 
         command.ReplyToCommand("[ZM ADMIN] You do not have permission to use Zombie Mod admin test commands.");

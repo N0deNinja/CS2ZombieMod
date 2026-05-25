@@ -1448,12 +1448,21 @@ public class ZombieRoundManager
             ? 0
             : (_currentWorkshopMapIndex + 1) % mapNames.Length;
         var nextMapName = mapNames[nextIndex];
+        var nextWorkshopMapId = GetConfiguredWorkshopMapId(nextIndex);
         _currentWorkshopMapIndex = nextIndex;
         ApplyWorkshopAddonOrder(nextIndex);
 
         BroadcastChat(ChatText.Zombie($"Loading next map: {ChatColors.Gold}{nextMapName}{ChatColors.Default}"));
-        Console.WriteLine($"[ZombieMod] Loading map {nextMapName} from configured workshop rotation.");
-        Server.ExecuteCommand($"map {nextMapName}");
+        if (!string.IsNullOrWhiteSpace(nextWorkshopMapId))
+        {
+            Console.WriteLine($"[ZombieMod] Loading workshop map {nextMapName} ({nextWorkshopMapId}) from configured rotation.");
+            Server.ExecuteCommand($"host_workshop_map {nextWorkshopMapId}");
+        }
+        else
+        {
+            Console.WriteLine($"[ZombieMod] Loading map {nextMapName} from configured rotation.");
+            Server.ExecuteCommand($"changelevel {nextMapName}");
+        }
 
         return true;
     }
@@ -1506,6 +1515,15 @@ public class ZombieRoundManager
             .Select(id => id.Trim())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private string GetConfiguredWorkshopMapId(int activeMapIndex)
+    {
+        var mapIds = _config.GeneralConfig.WorkshopMapIds ?? [];
+        if (activeMapIndex < 0 || activeMapIndex >= mapIds.Length)
+            return "";
+
+        return mapIds[activeMapIndex]?.Trim() ?? "";
     }
 
     private void ShowWaitingHud(int connectedPlayers)

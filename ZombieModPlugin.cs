@@ -1,7 +1,10 @@
 ﻿using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.Administration;
+using ReclaimCS.Shared.CounterStrike;
 using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
@@ -36,6 +39,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
     private BlockadeService? _blockadeService;
     private ZombieRoundManager? _roundManager;
     private ProgressionService? _progressionService;
+    private PlayerNameTagService? _playerNameTagService;
     private string _currentMapName = string.Empty;
 
     public BaseConfig Config { get; set; } = null!;
@@ -82,6 +86,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         _humanShopCommandHandler = new HumanShopCommandHandler(_playerStates, Config, this, progressionService, humanWeaponShopService);
         _roundManager = new ZombieRoundManager(_playerStates, Config, zombieHandler, humanHandler, zombieMeleeVisualService, progressionService, blockadeService);
         _adminTestHandler = new AdminTestHandler(_playerStates, Config, this, zombieHandler, humanHandler, _roundManager, progressionService);
+        _playerNameTagService = new PlayerNameTagService(() => Config.Admin);
         _abilityHandler.RegisterCommands();
         _progressionCommandHandler.RegisterCommands();
         _humanShopCommandHandler.RegisterCommands();
@@ -92,7 +97,10 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         RegisterEventHandler<EventPlayerConnectFull>((@event, gameEventInfo) =>
         {
             if (@event.Userid != null)
+            {
                 _roundManager.OnPlayablePlayerConnected(@event.Userid);
+                Server.NextFrame(() => _playerNameTagService?.Apply(@event.Userid));
+            }
 
             return HookResult.Continue;
         });
@@ -105,6 +113,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         RegisterListener<Listeners.OnServerPrecacheResources>(OnServerPrecacheResources);
         RegisterListener<Listeners.OnPlayerTakeDamagePre>(_roundManager.OnPlayerTakeDamagePre);
         RegisterListener<Listeners.OnTick>(_roundManager.OnTick);
+        RegisterListener<Listeners.OnTick>(OnTick);
         RegisterListener<Listeners.OnPlayerButtonsChanged>(_roundManager.OnPlayerButtonsChanged);
         RegisterListener<Listeners.OnMapStart>(mapName =>
         {
@@ -112,6 +121,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
             Console.WriteLine($"[ZombieMod] Map started: {mapName}. Applying Zombie Mod server rules.");
             _roundManager?.OnMapStarted(mapName);
             ScheduleWorkshopAddonDownloadRetry();
+            Server.NextFrame(ApplyPlayerNameTags);
             Server.NextFrame(() =>
             {
                 _roundManager?.ApplyZombieServerRules();
@@ -130,13 +140,76 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
                 if (!state.ProgressionLoaded)
                     progressionService.BeginLoadPlayer(player, state);
             }
+
+            ApplyPlayerNameTags();
         });
+
+        RegisterTaggedChatCommandListeners();
     }
 
     public override void Unload(bool hotReload)
     {
         _blockadeService?.ClearAll();
         _progressionService?.SaveAllConnectedPlayers();
+    }
+
+    private void OnTick()
+    {
+        ApplyPlayerNameTags();
+    }
+
+    private void ApplyPlayerNameTags()
+    {
+        if (_playerNameTagService == null)
+            return;
+
+        foreach (var player in Utilities.GetPlayers().Where(player => player.IsRealConnectedPlayer(Config.GeneralConfig.IncludeBotsInRound)))
+            _playerNameTagService.Apply(player);
+    }
+
+    private void RegisterTaggedChatCommandListeners()
+    {
+        AddCommandListener("say", OnTaggedSayCommand, HookMode.Pre);
+        AddCommandListener("say_team", OnTaggedSayTeamCommand, HookMode.Pre);
+    }
+
+    private HookResult OnTaggedSayCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        return HandleTaggedChatCommand(player, command, teamChat: false);
+    }
+
+    private HookResult OnTaggedSayTeamCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        return HandleTaggedChatCommand(player, command, teamChat: true);
+    }
+
+    private HookResult HandleTaggedChatCommand(CCSPlayerController? player, CommandInfo command, bool teamChat)
+    {
+        if (_playerNameTagService == null || !player.IsRealConnectedPlayer(Config.GeneralConfig.IncludeBotsInRound))
+            return HookResult.Continue;
+
+        var message = GetSayMessage(command);
+        if (string.IsNullOrWhiteSpace(message) || IsChatCommand(message) || !_playerNameTagService.HasManagedTag(player!))
+            return HookResult.Continue;
+
+        _playerNameTagService.PrintTaggedChatMessage(player!, message, teamChat, Config.GeneralConfig.IncludeBotsInRound);
+        return HookResult.Stop;
+    }
+
+    private static string GetSayMessage(CommandInfo command)
+    {
+        if (command.ArgCount < 2)
+            return "";
+
+        var message = command.GetArg(1).Trim();
+        return message.Length >= 2 && message[0] == '"' && message[^1] == '"'
+            ? message[1..^1].Trim()
+            : message;
+    }
+
+    private static bool IsChatCommand(string message)
+    {
+        return message.StartsWith('!') || message.StartsWith('/');
     }
 
     private void OnServerPrecacheResources(ResourceManifest manifest)

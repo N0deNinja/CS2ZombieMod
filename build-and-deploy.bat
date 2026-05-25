@@ -7,6 +7,8 @@ rem CounterStrikeSharp plugin folder.
 set "ROOT=%~dp0"
 set "SERVER_DIR=%ROOT%server"
 set "CSS_PLUGINS_DIR=%SERVER_DIR%\game\csgo\addons\counterstrikesharp\plugins"
+set "CSS_CONFIG_DIR=%SERVER_DIR%\game\csgo\addons\counterstrikesharp\configs"
+set "SHARED_ADMIN_CONFIG_DIR=%ROOT%..\reclaimcs-shared\configs\counterstrikesharp"
 set "LOCAL_WORKSHOP_ADDON=%ProgramFiles(x86)%\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo_addons\invisible_knife"
 set "CONFIGURATION=%BUILD_CONFIGURATION%"
 
@@ -89,6 +91,19 @@ robocopy "%OUTPUT_DIR%" "%TARGET_DIR%" /E /PURGE /XD "data" /XF "*.xml" "*.db" "
 if %ERRORLEVEL% GEQ 8 (
     echo [error] Failed to copy plugin files. Robocopy exit code: %ERRORLEVEL%
     exit /b 1
+)
+
+if not exist "%SHARED_ADMIN_CONFIG_DIR%\admins.json" (
+    echo [warn] Shared admin config was not found: "%SHARED_ADMIN_CONFIG_DIR%"
+) else if not exist "%SHARED_ADMIN_CONFIG_DIR%\admin_groups.json" (
+    echo [warn] Shared admin config was not found: "%SHARED_ADMIN_CONFIG_DIR%"
+) else (
+    echo [deploy] Syncing shared CounterStrikeSharp admin config...
+    if not exist "%CSS_CONFIG_DIR%" mkdir "%CSS_CONFIG_DIR%"
+    copy /Y "%SHARED_ADMIN_CONFIG_DIR%\admins.json" "%CSS_CONFIG_DIR%\admins.json" >nul
+    if errorlevel 1 exit /b 1
+    copy /Y "%SHARED_ADMIN_CONFIG_DIR%\admin_groups.json" "%CSS_CONFIG_DIR%\admin_groups.json" >nul
+    if errorlevel 1 exit /b 1
 )
 
 if exist "%LOCAL_WORKSHOP_ADDON%\sounds" (

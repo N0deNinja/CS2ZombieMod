@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.Administration;
 using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Humans.Models;
@@ -14,6 +15,7 @@ public class BaseConfig : BasePluginConfig
     public AbilityConfig AbilityConfig { get; set; } = new();
     public ProgressionConfig ProgressionConfig { get; set; } = new();
     public GeneralConfig GeneralConfig { get; set; } = new();
+    public ReclaimAdminOptions Admin { get; set; } = new();
     public AdminTestConfig AdminTestConfig { get; set; } = new();
     public SoundConfig SoundConfig { get; set; } = new();
     public ZombieMeleeVisualConfig ZombieMeleeVisualConfig { get; set; } = new();
@@ -53,7 +55,7 @@ public class GeneralConfig
 public class AdminTestConfig
 {
     public bool Enabled { get; set; } = true;
-    public bool RequireAdminPermissions { get; set; } = false;
+    public bool RequireAdminPermissions { get; set; } = true;
     public string[] RequiredPermissions { get; set; } = ["@css/root"];
     public string MenuCommand { get; set; } = "zadmin";
     public string ClassCommand { get; set; } = "zclass";
