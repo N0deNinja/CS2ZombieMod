@@ -2,6 +2,7 @@ using System.Drawing;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.Extensions;
 using ZombieModPlugin.Formatting;
@@ -128,9 +129,10 @@ public class HumanHandler
         if (pawn.WeaponServices != null)
             pawn.WeaponServices.PreventWeaponPickup = false;
 
-        var model = !string.IsNullOrWhiteSpace(humanClass.PlayerModel)
+        var configuredModel = !string.IsNullOrWhiteSpace(humanClass.PlayerModel)
             ? humanClass.PlayerModel
             : _config.HumanConfig.PlayerModel;
+        var model = ReclaimPlayerModels.ResolveModelPath(configuredModel);
 
         if (!string.IsNullOrWhiteSpace(model))
             pawn.SetModel(model);

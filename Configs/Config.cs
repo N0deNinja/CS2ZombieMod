@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Humans.Models;
 using ZombieModPlugin.Zombies.Models;
@@ -38,7 +39,11 @@ public class GeneralConfig
     public bool IncludeBotsInRound { get; set; } = false;
     public float AirAccelerate { get; set; } = 100f;
     public bool AutoDownloadWorkshopAddons { get; set; } = true;
-    public string[] WorkshopAddonIds { get; set; } = ["3170427476", "3730088795", "3730813775"];
+    public string[] WorkshopAddonIds { get; set; } =
+    [
+        ..ReclaimPlayerModels.ZombieModWorkshopAddonIds,
+        ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId
+    ];
     public bool RotateWorkshopMaps { get; set; } = false;
     public int RoundsPerWorkshopMap { get; set; } = 5;
     public string[] WorkshopMapIds { get; set; } = ["3685437201", "3222984182", "3283778158"];
@@ -235,7 +240,7 @@ public class ZombieConfig
             SpeedModifier = 1.0f,
             Damage = 25,
             Gravity = 1.0f,
-            PlayerModel = "agents/models/gxp/classic_zombie/classic_zombie.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.ClassicZombie,
             DefaultAbilities = [AbilityType.Pounce],
             UnlockableAbilities = [AbilityType.Berserk, AbilityType.HealthRegen]
         },
@@ -247,7 +252,7 @@ public class ZombieConfig
             SpeedModifier = 1.05f,
             Damage = 30,
             Gravity = 0.9f,
-            PlayerModel = "agents/models/han/molong/molong.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.Molong,
             DefaultAbilities = [AbilityType.Pounce, AbilityType.MultiJump],
             UnlockableAbilities = [AbilityType.Berserk, AbilityType.Invisibility]
         },
@@ -259,7 +264,7 @@ public class ZombieConfig
             SpeedModifier = 1.3f,
             Damage = 20,
             Gravity = 1.0f,
-            PlayerModel = "agents/models/s2ze/zombie_basic/zombie_basic.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.RunnerZombie,
             DefaultAbilities = [AbilityType.SpeedBoost],
             UnlockableAbilities = [AbilityType.Pounce]
         },
@@ -271,7 +276,7 @@ public class ZombieConfig
             SpeedModifier = 0.85f,
             Damage = 40,
             Gravity = 1.0f,
-            PlayerModel = "agents/models/s2ze/zombie_chris_walker/zombie_chris_walker.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.BruteZombie,
             DefaultAbilities = [AbilityType.Berserk],
             UnlockableAbilities = [AbilityType.HealthRegen, AbilityType.SelfDestruct]
         },
@@ -283,7 +288,7 @@ public class ZombieConfig
             SpeedModifier = 1.0f,
             Damage = 20,
             Gravity = 1.0f,
-            PlayerModel = "agents/models/s2ze/zombie_cultist/zombie_cultist.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.CultistZombie,
             DefaultAbilities = [AbilityType.CultistHex],
             UnlockableAbilities = [AbilityType.Invisibility, AbilityType.FrostBolt]
         },
@@ -295,7 +300,7 @@ public class ZombieConfig
             SpeedModifier = 0.95f,
             Damage = 22,
             Gravity = 1.0f,
-            PlayerModel = "agents/models/s2ze/zombie_frozen/zombie_frozen.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.FrozenZombie,
             DefaultAbilities = [AbilityType.FrostBolt],
             UnlockableAbilities = [AbilityType.HealthRegen, AbilityType.CultistHex]
         },
@@ -307,7 +312,7 @@ public class ZombieConfig
             SpeedModifier = 1.2f,
             Damage = 18,
             Gravity = 0.75f,
-            PlayerModel = "characters/models/kolka/2025/lurker/lurker.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.Lurker,
             DefaultAbilities = [AbilityType.LurkerCloak, AbilityType.Pounce, AbilityType.WallClimb],
             UnlockableAbilities = [AbilityType.Invisibility, AbilityType.SpeedBoost]
         }
@@ -324,7 +329,7 @@ public class ZombieConfig
 
 public class HumanConfig
 {
-    public string PlayerModel { get; set; } = "agents/models/s2ze/earthgovsol/deadspace_earthgovsol_hitbox.vmdl";
+    public string PlayerModel { get; set; } = ReclaimPlayerModels.ModelPaths.EarthGovSecurity;
     public string DefaultHumanClassId { get; set; } = "security";
     public string[] DefaultWeapons { get; set; } = ["weapon_knife", "weapon_usp_silencer"];
     public int StartingMoney { get; set; } = 10000;
@@ -350,7 +355,7 @@ public class HumanConfig
         {
             Id = "security",
             Name = "EarthGov Security",
-            PlayerModel = "agents/models/s2ze/earthgovsol/deadspace_earthgovsol_hitbox.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.EarthGovSecurity,
             Health = 100,
             SpeedModifier = 1.0f,
             Gravity = 1.0f,
@@ -361,7 +366,7 @@ public class HumanConfig
         {
             Id = "tac",
             Name = "Tactical Trooper",
-            PlayerModel = "agents/models/s2ze/hd2_b01_tac/hd2_b01_tac_nohitbox.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.TacticalTrooper,
             Health = 105,
             SpeedModifier = 1.02f,
             Gravity = 1.0f,
@@ -372,7 +377,7 @@ public class HumanConfig
         {
             Id = "hunter",
             Name = "Hunter",
-            PlayerModel = "agents/models/apple/vector/vector.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.VectorHunter,
             Health = 100,
             SpeedModifier = 1.18f,
             Gravity = 0.95f,
@@ -385,7 +390,7 @@ public class HumanConfig
         {
             Id = "vip_heavy",
             Name = "VIP Heavy",
-            PlayerModel = "agents/models/reborn/deadpool/deadpool.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.DeadpoolReborn,
             Health = 150,
             SpeedModifier = 0.95f,
             Gravity = 1.0f,
@@ -399,7 +404,7 @@ public class HumanConfig
         {
             Id = "vip_tactical",
             Name = "VIP Tactical",
-            PlayerModel = "characters/models/kolka/ghost/ghost.vmdl",
+            PlayerModel = ReclaimPlayerModels.ModelPaths.GhostTactical,
             Health = 125,
             SpeedModifier = 1.05f,
             Gravity = 1.0f,

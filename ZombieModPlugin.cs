@@ -2,6 +2,7 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Abilities.Managers;
 using ZombieModPlugin.Blockades;
@@ -179,8 +180,13 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     private static void PrecacheConfiguredModel(ResourceManifest manifest, string modelPath)
     {
-        if (!string.IsNullOrWhiteSpace(modelPath))
-            manifest.AddResource(modelPath);
+        if (ReclaimPlayerModels.TryFind(modelPath, out var model))
+        {
+            manifest.AddPlayerModelResources(model);
+            return;
+        }
+
+        manifest.AddPlayerModelResource(modelPath);
     }
 
     private static void PrecacheConfiguredResource(ResourceManifest manifest, string resourcePath)
@@ -234,6 +240,8 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
         foreach (var addonId in Config.GeneralConfig.WorkshopAddonIds ?? [])
             AddWorkshopAddonId(orderedIds, addonId);
+
+        AddWorkshopAddonId(orderedIds, ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId);
 
         foreach (var addonId in mapIds)
             AddWorkshopAddonId(orderedIds, addonId);

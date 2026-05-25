@@ -2,6 +2,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Modules.Extensions;
+using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Configs;
 using ZombieModPlugin.States;
 using ZombieModPlugin.Extensions;
@@ -98,9 +99,11 @@ public class ZombieHandler
 
     private string GetZombieModel(Zombie zombie)
     {
-        return !string.IsNullOrWhiteSpace(zombie.PlayerModel)
+        var configuredModel = !string.IsNullOrWhiteSpace(zombie.PlayerModel)
             ? zombie.PlayerModel
             : _config.ZombieConfig.PlayerModel;
+
+        return ReclaimPlayerModels.ResolveModelPath(configuredModel);
     }
 
     private Zombie? GetDefaultZombieClass()

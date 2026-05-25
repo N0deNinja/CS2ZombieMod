@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
+using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Blockades;
 using ZombieModPlugin.Configs;
@@ -1479,6 +1480,8 @@ public class ZombieRoundManager
 
         foreach (var addonId in _config.GeneralConfig.WorkshopAddonIds ?? [])
             AddWorkshopAddonId(orderedIds, addonId);
+
+        AddWorkshopAddonId(orderedIds, ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId);
 
         foreach (var addonId in mapIds)
             AddWorkshopAddonId(orderedIds, addonId);
