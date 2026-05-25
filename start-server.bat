@@ -30,6 +30,13 @@ if "%PORT%"=="" set "PORT=27015"
 if "%MAP%"=="" set "MAP=zm_liquid_anomaly_s"
 if "%WORKSHOP_BOOTSTRAP_MAP%"=="" set "WORKSHOP_BOOTSTRAP_MAP=de_dust2"
 
+if "%WORKSHOP_MAP%"=="" if /I "%MAP%"=="zm_liquid_anomaly_s" set "WORKSHOP_MAP=3685437201"
+if "%WORKSHOP_MAP%"=="" if "%MAP%"=="3685437201" set "WORKSHOP_MAP=3685437201"
+if "%WORKSHOP_MAP%"=="" if /I "%MAP%"=="zm_silent_village" set "WORKSHOP_MAP=3222984182"
+if "%WORKSHOP_MAP%"=="" if "%MAP%"=="3222984182" set "WORKSHOP_MAP=3222984182"
+if "%WORKSHOP_MAP%"=="" if /I "%MAP%"=="zm_mediumzm" set "WORKSHOP_MAP=3283778158"
+if "%WORKSHOP_MAP%"=="" if "%MAP%"=="3283778158" set "WORKSHOP_MAP=3283778158"
+
 if not exist "%CS2_EXE%" (
     echo [error] CS2 server executable was not found: "%CS2_EXE%"
     echo [error] Run init-server.bat first.
