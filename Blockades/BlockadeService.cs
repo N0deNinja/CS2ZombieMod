@@ -18,28 +18,43 @@ public sealed class BlockadeService
     private const string MainVariantName = "main";
     private const string SmallVariantName = "small";
     private const float MinimumFacingDot = 0.35f;
+    private const string PreviewBeamMaterial = "materials/sprites/laserbeam.vtex";
+    private const float PreviewBeamWidth = 0.8f;
+    private const uint NoDrawEffect = (uint)EntityEffects_t.EF_NODRAW;
+    private const uint NoDrawButTransmitEffect = (uint)EntityEffects_t.EF_NODRAW_BUT_TRANSMIT;
+    private static readonly Color PreviewBeamColor = Color.FromArgb(185, 255, 224, 32);
+    private static readonly (int Start, int End)[] PreviewBoxEdges =
+    [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7)
+    ];
 
     private readonly Dictionary<ulong, PlayerState> _playerStates;
     private readonly BaseConfig _config;
     private readonly BasePlugin _plugin;
     private readonly ProgressionService _progressionService;
     private readonly Func<bool> _isPlacementRound;
+    private readonly Func<string> _describePlacementGate;
     private readonly Dictionary<ulong, PreviewBlockade> _previews = [];
     private readonly List<PlacedBlockade> _placedBlockades = [];
     private readonly Dictionary<ulong, DateTime> _nextZombieHitAtUtc = [];
+    private int _previewAuditSequence;
 
     public BlockadeService(
         Dictionary<ulong, PlayerState> playerStates,
         BaseConfig config,
         BasePlugin plugin,
         ProgressionService progressionService,
-        Func<bool> isPlacementRound)
+        Func<bool> isPlacementRound,
+        Func<string>? describePlacementGate = null)
     {
         _playerStates = playerStates;
         _config = config;
         _plugin = plugin;
         _progressionService = progressionService;
         _isPlacementRound = isPlacementRound;
+        _describePlacementGate = describePlacementGate ?? (() => $"allowed={_isPlacementRound()}");
     }
 
     public void RegisterCommands()
@@ -66,19 +81,22 @@ public sealed class BlockadeService
 
             if (!TryFindPlayer(ownerKey, out var player))
             {
-                LogDebug($"OnTick removing preview ownerKey={ownerKey} reason=\"player not found\" {DescribeEntity(preview.Entity)}");
+                LogDebug($"OnTick removing preview ownerKey={ownerKey} reason=\"player not found\" placementGate={Quote(DescribePlacementGate())} {DescribePreview(preview)}");
                 RemovePreview(ownerKey, reason: "tick player not found");
                 continue;
             }
 
             if (!CanUseBlockades(player, notify: false, out _, out var failureReason))
             {
-                LogDebug($"OnTick removing preview ownerKey={ownerKey} reason=\"CanUseBlockades failed: {failureReason}\" {DescribePlayer(player)} {DescribeEntity(preview.Entity)}");
+                LogDebug($"OnTick removing preview ownerKey={ownerKey} reason=\"CanUseBlockades failed: {failureReason}\" placementGate={Quote(DescribePlacementGate())} {DescribePreview(preview)} {DescribePlayer(player)}");
+                TellPreviewUnavailable(player, ToPreviewUnavailableReason(failureReason));
                 RemovePreview(ownerKey, reason: $"tick CanUseBlockades failed: {failureReason}");
                 continue;
             }
 
+            preview.TickCount++;
             UpdatePreviewTransform(player, preview, context: "tick", logDetails: false);
+            UpdatePreviewOutline(preview, "tick");
         }
 
         DamageBlockadesFromHeldHeavyAttacks();
@@ -110,7 +128,7 @@ public sealed class BlockadeService
     public void ClearAll()
     {
         foreach (var preview in _previews.Values)
-            SafeRemove(preview.Entity);
+            RemovePreviewOutline(preview);
 
         foreach (var blockade in _placedBlockades)
             SafeRemove(blockade.Entity);
@@ -140,7 +158,7 @@ public sealed class BlockadeService
         var rawAction = command.ArgCount >= 2
             ? command.GetArg(1)
             : string.Empty;
-        LogDebug($"Command start argCount={command.ArgCount} rawAction={Quote(rawAction)} enabled={_config.BlockadeConfig.Enabled} placementRound={_isPlacementRound()} {DescribePlayer(player)}");
+        LogDebug($"Command start argCount={command.ArgCount} rawAction={Quote(rawAction)} enabled={_config.BlockadeConfig.Enabled} placementGate={Quote(DescribePlacementGate())} {DescribePlayer(player)}");
 
         if (!_config.BlockadeConfig.Enabled)
         {
@@ -171,15 +189,16 @@ public sealed class BlockadeService
         var ownerKey = player.GetStateKey();
         var definition = GetDefinition(variant);
         _playerStates.TryGetValue(ownerKey, out var existingState);
-        LogDebug($"StartPreview requested ownerKey={ownerKey} variant={definition.Name} cost={definition.Cost} model={Quote(definition.Model)} {DescribePlayer(player, existingState)}");
+        var hadExistingPreview = _previews.TryGetValue(ownerKey, out var existingPreview);
+        LogDebug($"StartPreview requested ownerKey={ownerKey} variant={definition.Name} cost={definition.Cost} model={Quote(definition.Model)} previewCount={_previews.Count} hadExistingPreview={FormatBool(hadExistingPreview)} existing={DescribePreview(existingPreview)} placed={DescribePlacedBlockades(ownerKey)} placementGate={Quote(DescribePlacementGate())} {DescribePlayer(player, existingState)}");
 
         if (!CanUseBlockades(player, notify: true, out var state, out var failureReason))
         {
-            LogDebug($"StartPreview denied ownerKey={ownerKey} reason={Quote(failureReason)} variant={definition.Name} cost={definition.Cost} model={Quote(definition.Model)} {DescribePlayer(player, state)}");
+            LogDebug($"StartPreview denied ownerKey={ownerKey} reason={Quote(failureReason)} variant={definition.Name} cost={definition.Cost} model={Quote(definition.Model)} previewCount={_previews.Count} placed={DescribePlacedBlockades(ownerKey)} placementGate={Quote(DescribePlacementGate())} {DescribePlayer(player, state)}");
             return;
         }
 
-        LogDebug($"StartPreview CanUseBlockades allowed ownerKey={ownerKey} variant={definition.Name} cost={definition.Cost} model={Quote(definition.Model)} {DescribePlayer(player, state)}");
+        LogDebug($"StartPreview CanUseBlockades allowed ownerKey={ownerKey} variant={definition.Name} cost={definition.Cost} model={Quote(definition.Model)} previewCount={_previews.Count} placed={DescribePlacedBlockades(ownerKey)} placementGate={Quote(DescribePlacementGate())} {DescribePlayer(player, state)}");
 
         PruneInvalidPlacedBlockades();
 
@@ -187,15 +206,15 @@ public sealed class BlockadeService
         var placedCount = CountPlacedByOwner(ownerKey);
         if (maxPlaced > 0 && placedCount >= maxPlaced)
         {
-            LogDebug($"StartPreview denied ownerKey={ownerKey} reason=\"max placed reached\" placed={placedCount} maxPlaced={maxPlaced}");
-            TellHuman(player, $"Maximum blockades reached ({maxPlaced}).");
+            LogDebug($"StartPreview denied ownerKey={ownerKey} reason=\"max placed reached\" placed={placedCount} maxPlaced={maxPlaced} previewCount={_previews.Count} placedDetails={DescribePlacedBlockades(ownerKey)}");
+            TellPreviewUnavailable(player, $"maximum blockades reached ({maxPlaced}).");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(definition.Model))
         {
             LogDebug($"StartPreview denied ownerKey={ownerKey} reason=\"model not configured\" variant={definition.Name}");
-            TellHuman(player, "Blockade model is not configured.");
+            TellPreviewUnavailable(player, "blockade model is not configured.");
             return;
         }
 
@@ -203,36 +222,35 @@ public sealed class BlockadeService
         {
             LogDebug($"StartPreview denied ownerKey={ownerKey} reason=\"not enough money\" money={state.Money} cost={definition.Cost} variant={definition.Name} model={Quote(definition.Model)}");
             _progressionService.ApplyInGameMoney(player, state);
-            TellHuman(player, $"{_config.MessagesConfig.NotEnoughMoney} Need {ChatText.Money(definition.Cost)}. You have {ChatText.Money(state.Money)}.", center: false);
+            TellPreviewUnavailable(player, $"not enough money. Need {definition.Cost}, you have {state.Money}.", center: false);
             return;
         }
 
         if (!TryGetPreviewTransform(player, out var position, out var angles, context: "start", logDetails: true))
         {
             LogDebug($"StartPreview denied ownerKey={ownerKey} reason=\"preview transform unavailable\" variant={definition.Name} model={Quote(definition.Model)}");
-            TellHuman(player, "Could not find a valid preview position.");
+            TellPreviewUnavailable(player, "could not find a valid preview position.");
             return;
         }
 
-        RemovePreview(ownerKey, notify: false, reason: "start replacing existing preview");
+        LogDebug($"StartPreview transform-ready ownerKey={ownerKey} variant={definition.Name} position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)} nearest={DescribeNearestPlacedBlockade(ownerKey, position)}");
 
-        var entity = SpawnPreviewEntity(definition.Model, position, angles);
-        if (entity == null)
-        {
-            LogDebug($"StartPreview failed ownerKey={ownerKey} reason=\"preview entity creation failed\" variant={definition.Name} model={Quote(definition.Model)} position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)}");
-            TellHuman(player, "Could not create blockade preview.");
-            return;
-        }
+        var removedExisting = RemovePreview(ownerKey, notify: false, reason: "start replacing existing preview");
+        LogDebug($"StartPreview after-remove-existing ownerKey={ownerKey} removedExisting={FormatBool(removedExisting)} previewCount={_previews.Count} placed={DescribePlacedBlockades(ownerKey)}");
 
-        var preview = new PreviewBlockade(entity, definition)
+        var previewId = System.Threading.Interlocked.Increment(ref _previewAuditSequence);
+        var previewBounds = GetPreviewLocalBounds(definition.Variant);
+        var preview = new PreviewBlockade(previewId, definition, previewBounds.Mins, previewBounds.Maxs)
         {
             Position = position,
             Angles = angles
         };
         _previews[ownerKey] = preview;
-        LogDebug($"StartPreview stored ownerKey={ownerKey} variant={definition.Name} position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)} {DescribeEntity(entity)}");
-        RefreshPreview(ownerKey);
-        Server.NextFrame(() => RefreshPreview(ownerKey));
+        LogDebug($"StartPreview stored ownerKey={ownerKey} {DescribePreview(preview)} previewCount={_previews.Count} nearest={DescribeNearestPlacedBlockade(ownerKey, position)}");
+        RefreshPreview(ownerKey, "start-immediate");
+        SchedulePreviewAudit(ownerKey, previewId, "start-next-frame", TimeSpan.Zero);
+        SchedulePreviewAudit(ownerKey, previewId, "start-150ms", TimeSpan.FromMilliseconds(150));
+        SchedulePreviewAudit(ownerKey, previewId, "start-600ms", TimeSpan.FromMilliseconds(600));
 
         var label = definition.Variant == BlockadeVariant.Small ? "small blockade" : "blockade";
         LogDebug($"StartPreview chat notification ownerKey={ownerKey} label={Quote(label)} cost={definition.Cost}");
@@ -260,15 +278,15 @@ public sealed class BlockadeService
         var ownerKey = player.GetStateKey();
         if (!_previews.TryGetValue(ownerKey, out var preview))
         {
-            LogDebug($"Placement attempt ownerKey={ownerKey} preview=missing {DescribePlayer(player, state)}");
+            LogDebug($"Placement attempt ownerKey={ownerKey} preview=missing previewCount={_previews.Count} placed={DescribePlacedBlockades(ownerKey)} {DescribePlayer(player, state)}");
             return;
         }
 
-        LogDebug($"Placement attempt ownerKey={ownerKey} preview=exists variant={preview.Definition.Name} cost={preview.Definition.Cost} model={Quote(preview.Definition.Model)} currentPosition={FormatVectorForLog(preview.Position)} currentAngles={FormatAnglesForLog(preview.Angles)} {DescribePlayer(player, state)} {DescribeEntity(preview.Entity)}");
+        LogDebug($"Placement attempt ownerKey={ownerKey} preview=exists cost={preview.Definition.Cost} model={Quote(preview.Definition.Model)} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(ownerKey, preview.Position)} {DescribePlayer(player, state)}");
 
         if (!CanUseBlockades(player, notify: true, out _, out var failureReason))
         {
-            LogDebug($"Placement denied ownerKey={ownerKey} reason=\"CanUseBlockades failed: {failureReason}\" {DescribePlayer(player, state)}");
+            LogDebug($"Placement denied ownerKey={ownerKey} reason=\"CanUseBlockades failed: {failureReason}\" {DescribePreview(preview)} placementGate={Quote(DescribePlacementGate())} {DescribePlayer(player, state)}");
             RemovePreview(ownerKey, reason: $"placement CanUseBlockades failed: {failureReason}");
             return;
         }
@@ -279,16 +297,16 @@ public sealed class BlockadeService
         var placedCount = CountPlacedByOwner(ownerKey);
         if (maxPlaced > 0 && placedCount >= maxPlaced)
         {
-            LogDebug($"Placement denied ownerKey={ownerKey} reason=\"max placed reached\" placed={placedCount} maxPlaced={maxPlaced}");
+            LogDebug($"Placement denied ownerKey={ownerKey} reason=\"max placed reached\" placed={placedCount} maxPlaced={maxPlaced} {DescribePreview(preview)} placedDetails={DescribePlacedBlockades(ownerKey)}");
             TellHuman(player, $"Maximum blockades reached ({maxPlaced}).");
             return;
         }
 
         UpdatePreviewTransform(player, preview, context: "placement", logDetails: true);
-        LogDebug($"Placement transformed ownerKey={ownerKey} position={FormatVectorForLog(preview.Position)} angles={FormatAnglesForLog(preview.Angles)} {DescribeEntity(preview.Entity)}");
+        LogDebug($"Placement transformed ownerKey={ownerKey} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(ownerKey, preview.Position)}");
 
         var isClearOfPlayers = IsPlacementClearOfPlayers(preview.Position, out var clearanceDetails);
-        LogDebug($"Placement player-clearance ownerKey={ownerKey} clear={isClearOfPlayers} position={FormatVectorForLog(preview.Position)} {clearanceDetails}");
+        LogDebug($"Placement player-clearance ownerKey={ownerKey} clear={isClearOfPlayers} {DescribePreview(preview)} {clearanceDetails}");
         if (!isClearOfPlayers)
         {
             TellHuman(player, "Cannot place a blockade on a player. Move the preview away first.");
@@ -297,7 +315,7 @@ public sealed class BlockadeService
 
         var moneyBeforeSpend = state.Money;
         var spendSucceeded = _progressionService.TrySpendMoney(player, state, preview.Definition.Cost, out var moneyError);
-        LogDebug($"Placement spend-money ownerKey={ownerKey} success={spendSucceeded} moneyBefore={moneyBeforeSpend} moneyAfter={state.Money} cost={preview.Definition.Cost} error={Quote(moneyError)}");
+        LogDebug($"Placement spend-money ownerKey={ownerKey} success={spendSucceeded} moneyBefore={moneyBeforeSpend} moneyAfter={state.Money} cost={preview.Definition.Cost} error={Quote(moneyError)} {DescribePreview(preview)}");
         if (!spendSucceeded)
         {
             RemovePreview(ownerKey, notify: false, reason: $"placement spend money failed: {moneyError}");
@@ -306,7 +324,7 @@ public sealed class BlockadeService
         }
 
         var entity = SpawnPlacedEntity(preview.Definition.Model, preview.Position, preview.Angles);
-        LogDebug($"Placement placed-entity ownerKey={ownerKey} success={entity != null} model={Quote(preview.Definition.Model)} position={FormatVectorForLog(preview.Position)} angles={FormatAnglesForLog(preview.Angles)} {DescribeEntity(entity)}");
+        LogDebug($"Placement placed-entity ownerKey={ownerKey} success={entity != null} model={Quote(preview.Definition.Model)} {DescribePreview(preview)} {DescribeEntity(entity)}");
         if (entity == null)
         {
             TellHuman(player, "Could not place blockade here.");
@@ -323,7 +341,7 @@ public sealed class BlockadeService
         RemovePreview(ownerKey, notify: false, reason: "placement succeeded");
 
         var label = preview.Definition.Variant == BlockadeVariant.Small ? "Small blockade" : "Blockade";
-        LogDebug($"Placement succeeded ownerKey={ownerKey} label={Quote(label)} remainingMoney={state.Money} placedCount={CountPlacedByOwner(ownerKey)}");
+        LogDebug($"Placement succeeded ownerKey={ownerKey} label={Quote(label)} remainingMoney={state.Money} placedCount={CountPlacedByOwner(ownerKey)} placed={DescribePlacedBlockades(ownerKey)}");
         TellHuman(player, $"{ChatColors.Gold}{label}{ChatColors.Default} placed. {ChatText.Money(state.Money)} remaining.");
         _ = state;
     }
@@ -342,7 +360,7 @@ public sealed class BlockadeService
         {
             failureReason = "placement round is not active";
             if (notify)
-                TellHuman(player, "Blockades can only be used during active rounds.");
+                TellPreviewUnavailable(player, ToPreviewUnavailableReason(failureReason));
 
             return false;
         }
@@ -353,7 +371,7 @@ public sealed class BlockadeService
                 ? "player is invalid"
                 : "player is not alive";
             if (notify)
-                TellHuman(player, "You must be alive to place a blockade.");
+                TellPreviewUnavailable(player, ToPreviewUnavailableReason(failureReason));
 
             return false;
         }
@@ -363,29 +381,13 @@ public sealed class BlockadeService
         {
             failureReason = "player is zombie";
             if (notify)
-                player.PrintToChat(ChatText.Zombie("Zombies cannot place blockades."));
+                TellPreviewUnavailable(player, ToPreviewUnavailableReason(failureReason));
 
             return false;
         }
 
         failureReason = "allowed";
         return true;
-    }
-
-    private CBaseModelEntity? SpawnPreviewEntity(string model, Vector position, QAngle angles)
-    {
-        LogDebug($"SpawnPreviewEntity requested model={Quote(model)} position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)}");
-        var entity = TryCreateModelEntity("prop_dynamic_override", model, solid: false, position, angles);
-        if (entity == null)
-        {
-            LogDebug($"SpawnPreviewEntity failed model={Quote(model)} position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)}");
-            return null;
-        }
-
-        ApplyPreviewVisuals(entity);
-        ConfigurePreviewCollision(entity);
-        LogDebug($"SpawnPreviewEntity configured model={Quote(model)} {DescribeEntity(entity)}");
-        return entity;
     }
 
     private CBaseModelEntity? SpawnPlacedEntity(string model, Vector position, QAngle angles)
@@ -477,7 +479,7 @@ public sealed class BlockadeService
         if (!TryGetPreviewTransform(player, out var position, out var angles, context, logDetails))
         {
             if (logDetails)
-                LogDebug($"UpdatePreviewTransform failed context={Quote(context)} {DescribePlayer(player)} {DescribeEntity(preview.Entity)}");
+                LogDebug($"UpdatePreviewTransform failed context={Quote(context)} {DescribePreview(preview)} {DescribePlayer(player)}");
 
             return;
         }
@@ -485,16 +487,8 @@ public sealed class BlockadeService
         preview.Position = position;
         preview.Angles = angles;
 
-        if (preview.Entity.IsValid)
-        {
-            preview.Entity.Teleport(position, angles, null);
-            if (logDetails)
-                LogDebug($"UpdatePreviewTransform teleported context={Quote(context)} position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)} {DescribeEntity(preview.Entity)}");
-        }
-        else if (logDetails)
-        {
-            LogDebug($"UpdatePreviewTransform skipped teleport context={Quote(context)} reason=\"preview entity invalid\" position={FormatVectorForLog(position)} angles={FormatAnglesForLog(angles)} {DescribeEntity(preview.Entity)}");
-        }
+        if (logDetails)
+            LogDebug($"UpdatePreviewTransform updated-outline-target context={Quote(context)} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(player.GetStateKey(), position)}");
     }
 
     private bool TryGetPreviewTransform(
@@ -568,13 +562,85 @@ public sealed class BlockadeService
         if (entity == null)
             return "entity=null";
 
+        var designerName = SafeValue(() => entity.DesignerName);
         var index = SafeValue(() => entity.Index.ToString());
         var handle = SafeValue(() => entity.EntityHandle.ToString());
+        var flags = SafeValue(() => entity.CBodyComponent?.SceneNode?.Owner?.Entity?.Flags.ToString() ?? "<null>");
         var isValid = SafeValue(() => FormatBool(entity.IsValid));
         var origin = SafeValue(() => FormatVectorForLog(entity.AbsOrigin));
+        var effects = SafeValue(() => entity.Effects.ToString());
+        var renderMode = SafeValue(() => entity.RenderMode.ToString());
+        var renderFx = SafeValue(() => entity.RenderFX.ToString());
+        var solidType = SafeValue(() => entity.Collision?.SolidType.ToString() ?? "<null>");
+        var collisionGroup = SafeValue(() => entity.Collision?.CollisionGroup.ToString() ?? "<null>");
+        var collisionMins = SafeValue(() => FormatVectorForLog(entity.Collision?.Mins));
+        var collisionMaxs = SafeValue(() => FormatVectorForLog(entity.Collision?.Maxs));
 
-        return $"entityIndex={index} entityHandle={handle} isValid={isValid} origin={origin}";
+        return $"designer={Quote(designerName)} entityIndex={index} entityHandle={handle} isValid={isValid} origin={origin} flags={flags} effects={effects} renderMode={renderMode} renderFx={renderFx} solidType={solidType} collisionGroup={collisionGroup} collisionMins={collisionMins} collisionMaxs={collisionMaxs}";
     }
+
+    private static string DescribePreview(PreviewBlockade? preview)
+    {
+        if (preview == null)
+            return "preview=null";
+
+        var ageMs = (DateTime.UtcNow - preview.CreatedAtUtc).TotalMilliseconds;
+        var outlineValid = preview.OutlineBeams.Count(beam => beam is { IsValid: true });
+        return $"previewId={preview.PreviewId} previewAgeMs={FormatDouble(ageMs)} refreshCount={preview.RefreshCount} tickCount={preview.TickCount} outlineBeams={outlineValid}/{preview.OutlineBeams.Count} variant={preview.Definition.Name} position={FormatVectorForLog(preview.Position)} angles={FormatAnglesForLog(preview.Angles)} boundsMins={FormatVectorForLog(preview.BoundsMins)} boundsMaxs={FormatVectorForLog(preview.BoundsMaxs)}";
+    }
+
+    private string DescribePlacedBlockades(ulong ownerKey)
+    {
+        var validPlaced = _placedBlockades
+            .Where(blockade => blockade.OwnerKey == ownerKey && blockade.Entity.IsValid)
+            .Take(4)
+            .Select(blockade =>
+            {
+                var position = blockade.Entity.AbsOrigin ?? blockade.Position;
+                return $"{blockade.Definition.Name}@{FormatVectorForLog(position)} hits={blockade.Hits}/{blockade.Definition.MaxHits} entityIndex={SafeValue(() => blockade.Entity.Index.ToString())}";
+            })
+            .ToArray();
+
+        var count = CountPlacedByOwner(ownerKey);
+        return validPlaced.Length == 0
+            ? $"placedCount={count} placedList=none"
+            : $"placedCount={count} placedList={Quote(string.Join(" | ", validPlaced))}";
+    }
+
+    private string DescribeNearestPlacedBlockade(ulong ownerKey, Vector position)
+    {
+        PlacedBlockade? nearest = null;
+        Vector? nearestPosition = null;
+        var nearestDistance = float.MaxValue;
+        var count = 0;
+
+        foreach (var blockade in _placedBlockades)
+        {
+            if (blockade.OwnerKey != ownerKey || !blockade.Entity.IsValid)
+                continue;
+
+            count++;
+            var blockadePosition = blockade.Entity.AbsOrigin ?? blockade.Position;
+            var dx = blockadePosition.X - position.X;
+            var dy = blockadePosition.Y - position.Y;
+            var dz = blockadePosition.Z - position.Z;
+            var distance = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+            if (distance >= nearestDistance)
+                continue;
+
+            nearest = blockade;
+            nearestPosition = blockadePosition;
+            nearestDistance = distance;
+        }
+
+        if (nearest == null)
+            return $"ownerPlaced={count} nearestPlaced=none";
+
+        return $"ownerPlaced={count} nearestPlacedDistance={FormatFloat(nearestDistance)} nearestPlacedVariant={nearest.Definition.Name} nearestPlacedPosition={FormatVectorForLog(nearestPosition)} nearestPlacedEntityIndex={SafeValue(() => nearest.Entity.Index.ToString())}";
+    }
+
+    private string DescribePlacementGate() =>
+        SafeValue(() => _describePlacementGate());
 
     private static string FormatVectorForLog(Vector? vector)
     {
@@ -594,6 +660,9 @@ public sealed class BlockadeService
 
     private static string FormatFloat(float value) =>
         FormattableString.Invariant($"{value:0.###}");
+
+    private static string FormatDouble(double value) =>
+        FormattableString.Invariant($"{value:0.#}");
 
     private static string FormatBool(bool value) =>
         value ? "true" : "false";
@@ -625,25 +694,221 @@ public sealed class BlockadeService
         }
     }
 
-    private void RefreshPreview(ulong ownerKey)
+    private void SchedulePreviewAudit(ulong ownerKey, int previewId, string context, TimeSpan delay)
+    {
+        _ = RunPreviewAuditAsync(ownerKey, previewId, context, delay);
+    }
+
+    private async Task RunPreviewAuditAsync(ulong ownerKey, int previewId, string context, TimeSpan delay)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay);
+
+            Server.NextFrame(() => AuditPreview(ownerKey, previewId, context));
+        }
+        catch (Exception ex)
+        {
+            LogWarning($"PreviewAudit schedule failed ownerKey={ownerKey} requestedPreviewId={previewId} context={Quote(context)} exception={Quote(ex.Message)}");
+        }
+    }
+
+    private void AuditPreview(ulong ownerKey, int previewId, string context)
+    {
+        var found = _previews.TryGetValue(ownerKey, out var preview);
+        var playerFound = TryFindPlayer(ownerKey, out var player);
+        PlayerState? state = null;
+        if (playerFound)
+            _playerStates.TryGetValue(ownerKey, out state);
+
+        var samePreview = found && preview!.PreviewId == previewId;
+        var playerDetails = playerFound
+            ? DescribePlayer(player, state)
+            : "player=not-found";
+        var nearestDetails = found
+            ? DescribeNearestPlacedBlockade(ownerKey, preview!.Position)
+            : "nearestPlaced=not-checked";
+
+        LogDebug($"PreviewAudit context={Quote(context)} ownerKey={ownerKey} requestedPreviewId={previewId} found={FormatBool(found)} samePreview={FormatBool(samePreview)} previewCount={_previews.Count} {DescribePreview(preview)} placed={DescribePlacedBlockades(ownerKey)} nearest={nearestDetails} placementGate={Quote(DescribePlacementGate())} {playerDetails}");
+
+        if (!samePreview || preview == null || !playerFound)
+            return;
+
+        UpdatePreviewTransform(player, preview, context: $"audit:{context}", logDetails: true);
+        UpdatePreviewOutline(preview, $"audit:{context}");
+        LogDebug($"PreviewAudit refreshed current preview context={Quote(context)} ownerKey={ownerKey} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(ownerKey, preview.Position)}");
+    }
+
+    private void RefreshPreview(ulong ownerKey, string context)
     {
         if (!_previews.TryGetValue(ownerKey, out var preview))
         {
-            LogDebug($"RefreshPreview ownerKey={ownerKey} preview=not-found player=not-checked entity=not-checked");
+            LogDebug($"RefreshPreview ownerKey={ownerKey} context={Quote(context)} preview=not-found player=not-checked entity=not-checked previewCount={_previews.Count}");
             return;
         }
 
-        var entityValid = preview.Entity.IsValid;
+        preview.RefreshCount++;
         var playerFound = TryFindPlayer(ownerKey, out var player);
-        LogDebug($"RefreshPreview ownerKey={ownerKey} preview=found player={(playerFound ? "found" : "not-found")} entityValid={entityValid} position={FormatVectorForLog(preview.Position)} angles={FormatAnglesForLog(preview.Angles)} {DescribeEntity(preview.Entity)}");
+        LogDebug($"RefreshPreview ownerKey={ownerKey} context={Quote(context)} preview=found player={(playerFound ? "found" : "not-found")} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(ownerKey, preview.Position)}");
 
-        if (!entityValid || !playerFound)
+        if (!playerFound)
             return;
 
         UpdatePreviewTransform(player, preview, context: "refresh", logDetails: true);
-        ApplyPreviewVisuals(preview.Entity);
-        ConfigurePreviewCollision(preview.Entity);
-        LogDebug($"RefreshPreview applied visuals/collision ownerKey={ownerKey} position={FormatVectorForLog(preview.Position)} angles={FormatAnglesForLog(preview.Angles)} {DescribeEntity(preview.Entity)}");
+        UpdatePreviewOutline(preview, context);
+        LogDebug($"RefreshPreview applied outline ownerKey={ownerKey} context={Quote(context)} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(ownerKey, preview.Position)}");
+    }
+
+    private void UpdatePreviewOutline(PreviewBlockade preview, string context)
+    {
+        try
+        {
+            if (preview.OutlineBeams.Count != PreviewBoxEdges.Length || preview.OutlineBeams.Any(beam => beam == null || !beam.IsValid))
+            {
+                RemovePreviewOutline(preview);
+                if (!TryCreatePreviewOutline(preview, context))
+                    return;
+            }
+
+            ApplyPreviewOutlinePositions(preview);
+        }
+        catch (Exception ex)
+        {
+            LogWarning($"Preview outline update failed context={Quote(context)} exception={Quote(ex.Message)} {DescribePreview(preview)}");
+            RemovePreviewOutline(preview);
+        }
+    }
+
+    private bool TryCreatePreviewOutline(PreviewBlockade preview, string context)
+    {
+        for (var i = 0; i < PreviewBoxEdges.Length; i++)
+        {
+            var beam = CreatePreviewBeam(preview.Position);
+            if (beam == null)
+            {
+                LogWarning($"Preview outline beam creation failed context={Quote(context)} beamIndex={i} {DescribePreview(preview)}");
+                RemovePreviewOutline(preview);
+                return false;
+            }
+
+            preview.OutlineBeams.Add(beam);
+        }
+
+        LogDebug($"Preview outline created context={Quote(context)} beamCount={preview.OutlineBeams.Count} {DescribePreview(preview)}");
+        return true;
+    }
+
+    private static CBeam? CreatePreviewBeam(Vector position)
+    {
+        var beam = Utilities.CreateEntityByName<CBeam>("env_beam");
+        if (beam == null || !beam.IsValid)
+            return null;
+
+        beam.BeamType = BeamType_t.BEAM_POINTS;
+        beam.NumBeamEnts = 2;
+        beam.ClipStyle = BeamClipStyle_t.kNOCLIP;
+        beam.TurnedOff = false;
+        beam.Amplitude = 0.0f;
+        beam.Speed = 0.0f;
+        beam.FrameRate = 0.0f;
+        beam.HDRColorScale = 1.0f;
+        beam.FadeLength = 0.0f;
+        beam.Width = PreviewBeamWidth;
+        beam.EndWidth = PreviewBeamWidth;
+        beam.RenderMode = RenderMode_t.kRenderTransAlpha;
+        beam.RenderFX = RenderFx_t.kRenderFxNone;
+        beam.Render = PreviewBeamColor;
+        beam.SetModel(PreviewBeamMaterial);
+        beam.Teleport(position, null, null);
+        beam.DispatchSpawn();
+        beam.EndPos.X = position.X;
+        beam.EndPos.Y = position.Y;
+        beam.EndPos.Z = position.Z;
+        MarkPreviewBeamStateChanged(beam);
+        beam.MarkRenderStateChanged();
+        return beam;
+    }
+
+    private static void ApplyPreviewOutlinePositions(PreviewBlockade preview)
+    {
+        var corners = GetPreviewBoxCorners(preview);
+
+        for (var i = 0; i < PreviewBoxEdges.Length; i++)
+        {
+            var beam = preview.OutlineBeams[i];
+            if (!beam.IsValid)
+                continue;
+
+            var edge = PreviewBoxEdges[i];
+            var start = corners[edge.Start];
+            var end = corners[edge.End];
+            beam.Teleport(start, null, null);
+            beam.EndPos.X = end.X;
+            beam.EndPos.Y = end.Y;
+            beam.EndPos.Z = end.Z;
+            MarkPreviewBeamStateChanged(beam);
+            beam.MarkRenderStateChanged();
+        }
+    }
+
+    private static Vector[] GetPreviewBoxCorners(PreviewBlockade preview)
+    {
+        var (mins, maxs) = (preview.BoundsMins, preview.BoundsMaxs);
+        var yaw = preview.Angles.Y * MathF.PI / 180.0f;
+        var forward = new Vector(MathF.Cos(yaw), MathF.Sin(yaw), 0.0f);
+        var right = new Vector(-MathF.Sin(yaw), MathF.Cos(yaw), 0.0f);
+
+        return
+        [
+            PreviewBoxCorner(preview.Position, forward, right, mins.X, mins.Y, mins.Z),
+            PreviewBoxCorner(preview.Position, forward, right, maxs.X, mins.Y, mins.Z),
+            PreviewBoxCorner(preview.Position, forward, right, maxs.X, maxs.Y, mins.Z),
+            PreviewBoxCorner(preview.Position, forward, right, mins.X, maxs.Y, mins.Z),
+            PreviewBoxCorner(preview.Position, forward, right, mins.X, mins.Y, maxs.Z),
+            PreviewBoxCorner(preview.Position, forward, right, maxs.X, mins.Y, maxs.Z),
+            PreviewBoxCorner(preview.Position, forward, right, maxs.X, maxs.Y, maxs.Z),
+            PreviewBoxCorner(preview.Position, forward, right, mins.X, maxs.Y, maxs.Z)
+        ];
+    }
+
+    private static (Vector Mins, Vector Maxs) GetPreviewLocalBounds(BlockadeVariant variant)
+    {
+        return variant == BlockadeVariant.Small
+            ? (new Vector(-20.0f, -64.0f, 0.0f), new Vector(20.0f, 64.0f, 45.844f))
+            : (new Vector(-29.05f, -31.093f, -0.075f), new Vector(27.982f, 31.093f, 50.857f));
+    }
+
+    private static Vector PreviewBoxCorner(Vector origin, Vector forward, Vector right, float forwardOffset, float rightOffset, float zOffset)
+    {
+        return new Vector(
+            origin.X + forward.X * forwardOffset + right.X * rightOffset,
+            origin.Y + forward.Y * forwardOffset + right.Y * rightOffset,
+            origin.Z + zOffset);
+    }
+
+    private static void RemovePreviewOutline(PreviewBlockade preview)
+    {
+        foreach (var beam in preview.OutlineBeams)
+            SafeRemove(beam);
+
+        preview.OutlineBeams.Clear();
+    }
+
+    private static void MarkPreviewBeamStateChanged(CBeam beam)
+    {
+        Utilities.SetStateChanged(beam, "CBeam", "m_nBeamType");
+        Utilities.SetStateChanged(beam, "CBeam", "m_nNumBeamEnts");
+        Utilities.SetStateChanged(beam, "CBeam", "m_nClipStyle");
+        Utilities.SetStateChanged(beam, "CBeam", "m_bTurnedOff");
+        Utilities.SetStateChanged(beam, "CBeam", "m_fAmplitude");
+        Utilities.SetStateChanged(beam, "CBeam", "m_fSpeed");
+        Utilities.SetStateChanged(beam, "CBeam", "m_flFrameRate");
+        Utilities.SetStateChanged(beam, "CBeam", "m_flHDRColorScale");
+        Utilities.SetStateChanged(beam, "CBeam", "m_fFadeLength");
+        Utilities.SetStateChanged(beam, "CBeam", "m_fWidth");
+        Utilities.SetStateChanged(beam, "CBeam", "m_fEndWidth");
+        Utilities.SetStateChanged(beam, "CBeam", "m_vecEndPos");
     }
 
     private bool IsPlacementClearOfPlayers(Vector position, out string details)
@@ -782,13 +1047,13 @@ public sealed class BlockadeService
     {
         if (!_previews.Remove(ownerKey, out var preview))
         {
-            LogDebug($"RemovePreview ownerKey={ownerKey} found=false notify={notify} reason={Quote(reason)}");
+            LogDebug($"RemovePreview ownerKey={ownerKey} found=false notify={notify} reason={Quote(reason)} previewCount={_previews.Count}");
             return false;
         }
 
-        LogDebug($"RemovePreview ownerKey={ownerKey} found=true notify={notify} reason={Quote(reason)} position={FormatVectorForLog(preview.Position)} angles={FormatAnglesForLog(preview.Angles)} {DescribeEntity(preview.Entity)}");
-        SafeRemove(preview.Entity);
-        LogDebug($"RemovePreview removed entity ownerKey={ownerKey} reason={Quote(reason)} {DescribeEntity(preview.Entity)}");
+        LogDebug($"RemovePreview ownerKey={ownerKey} found=true notify={notify} reason={Quote(reason)} previewCountAfterRemove={_previews.Count} {DescribePreview(preview)} nearest={DescribeNearestPlacedBlockade(ownerKey, preview.Position)}");
+        RemovePreviewOutline(preview);
+        LogDebug($"RemovePreview removed outline ownerKey={ownerKey} reason={Quote(reason)} {DescribePreview(preview)}");
 
         if (notify && TryFindPlayer(ownerKey, out var player))
             TellHuman(player, "Blockade placement canceled.");
@@ -843,57 +1108,13 @@ public sealed class BlockadeService
                 Math.Max(1, config.MainHits));
     }
 
-    private void ApplyPreviewVisuals(CBaseModelEntity entity)
-    {
-        var alpha = Math.Clamp(_config.BlockadeConfig.PreviewAlpha, 25, 220);
-        entity.RenderMode = RenderMode_t.kRenderTransAlpha;
-        entity.RenderFX = RenderFx_t.kRenderFxNone;
-        entity.Render = Color.FromArgb(alpha, 255, 225, 32);
-        entity.MarkRenderStateChanged();
-
-        TryApplyDynamicGlow(entity);
-    }
-
     private static void ApplyPlacedVisuals(CBaseModelEntity entity)
     {
         entity.RenderMode = RenderMode_t.kRenderNormal;
         entity.RenderFX = RenderFx_t.kRenderFxNone;
         entity.Render = Color.FromArgb(255, 255, 255, 255);
+        entity.Effects &= ~(NoDrawEffect | NoDrawButTransmitEffect);
         entity.MarkRenderStateChanged();
-    }
-
-    private static void TryApplyDynamicGlow(CBaseModelEntity entity)
-    {
-        try
-        {
-            var dynamicProp = entity.As<CDynamicProp>();
-            dynamicProp.InitialGlowState = 1;
-            dynamicProp.GlowRange = 800;
-            dynamicProp.GlowRangeMin = 16;
-            dynamicProp.GlowColor = Color.FromArgb(255, 255, 225, 32);
-            dynamicProp.GlowTeam = -1;
-        }
-        catch
-        {
-        }
-    }
-
-    private static void ConfigurePreviewCollision(CBaseModelEntity entity)
-    {
-        try
-        {
-            entity.Collision.SolidType = SolidType_t.SOLID_NONE;
-            entity.Collision.SolidFlags = 0;
-            entity.Collision.CollisionGroup = (byte)CollisionGroup.COLLISION_GROUP_NEVER;
-            entity.Collision.EnablePhysics = 0;
-            entity.MoveType = MoveType_t.MOVETYPE_NONE;
-            entity.ActualMoveType = MoveType_t.MOVETYPE_NONE;
-            entity.AcceptInput("DisableCollision");
-        }
-        catch (Exception ex)
-        {
-            LogWarning($"Failed to configure preview collision exception={Quote(ex.Message)} {DescribeEntity(entity)}");
-        }
     }
 
     private static void ConfigurePlacedCollision(CBaseModelEntity entity)
@@ -943,6 +1164,26 @@ public sealed class BlockadeService
         player.PrintToChat(ChatText.Human(message));
         if (center)
             player.PrintToCenter(message);
+    }
+
+    private static void TellPreviewUnavailable(CCSPlayerController player, string reason, bool center = true)
+    {
+        var message = $"Block preview unavailable: {reason}";
+        player.PrintToChat(ChatText.Error(message));
+        if (center)
+            player.PrintToCenter(message);
+    }
+
+    private static string ToPreviewUnavailableReason(string failureReason)
+    {
+        return failureReason switch
+        {
+            "placement round is not active" => "placement phase is not active.",
+            "player is invalid" => "player is no longer valid.",
+            "player is not alive" => "you must be alive.",
+            "player is zombie" => "zombies cannot place blockades.",
+            _ => failureReason.EndsWith('.') ? failureReason : $"{failureReason}."
+        };
     }
 
     private static void SafeRemove(CEntityInstance? entity)
@@ -1001,16 +1242,28 @@ public sealed class BlockadeService
 
     private sealed class PreviewBlockade
     {
-        public PreviewBlockade(CBaseModelEntity entity, BlockadeDefinition definition)
+        public PreviewBlockade(
+            int previewId,
+            BlockadeDefinition definition,
+            Vector boundsMins,
+            Vector boundsMaxs)
         {
-            Entity = entity;
+            PreviewId = previewId;
             Definition = definition;
+            BoundsMins = boundsMins;
+            BoundsMaxs = boundsMaxs;
         }
 
-        public CBaseModelEntity Entity { get; }
+        public int PreviewId { get; }
+        public DateTime CreatedAtUtc { get; } = DateTime.UtcNow;
         public BlockadeDefinition Definition { get; }
+        public Vector BoundsMins { get; }
+        public Vector BoundsMaxs { get; }
+        public List<CBeam> OutlineBeams { get; } = [];
         public Vector Position { get; set; } = new();
         public QAngle Angles { get; set; } = new();
+        public int RefreshCount { get; set; }
+        public int TickCount { get; set; }
     }
 
     private sealed class PlacedBlockade

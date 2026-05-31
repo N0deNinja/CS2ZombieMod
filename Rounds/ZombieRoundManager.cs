@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Drawing;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Extensions;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
@@ -25,6 +26,15 @@ public class ZombieRoundManager
 {
     private const uint NoDrawEffect = (uint)EntityEffects_t.EF_NODRAW;
     private const uint NoDrawButTransmitEffect = (uint)EntityEffects_t.EF_NODRAW_BUT_TRANSMIT;
+    private static readonly HashSet<string> SingleUseGrenadeWeaponNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "decoy",
+        "flashbang",
+        "hegrenade",
+        "incgrenade",
+        "molotov",
+        "smokegrenade"
+    };
 
     private readonly Dictionary<ulong, PlayerState> _playerStates;
     private readonly BaseConfig _config;
@@ -65,7 +75,8 @@ public class ZombieRoundManager
         _blockadeService = blockadeService;
     }
 
-    public bool IsBlockadePlacementAllowed => _phase is RoundPhase.Active or RoundPhase.Testing;
+    public bool IsBlockadePlacementAllowed => _phase is RoundPhase.InfectionCountdown or RoundPhase.Active or RoundPhase.Testing;
+    public string BlockadePlacementDebugState => $"phase={_phase}; allowed={IsBlockadePlacementAllowed}";
 
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo gameEventInfo)
     {
@@ -161,6 +172,7 @@ public class ZombieRoundManager
         Server.ExecuteCommand("mp_playercashawards 0");
         Server.ExecuteCommand("mp_teamcashawards 0");
         Server.ExecuteCommand("mp_give_player_c4 0");
+        Server.ExecuteCommand("sv_infinite_ammo 1");
         Server.ExecuteCommand("mp_t_default_primary \"\"");
         Server.ExecuteCommand("mp_t_default_secondary \"\"");
         Server.ExecuteCommand($"mp_t_default_melee {zombieMeleeWeaponName}");
@@ -241,7 +253,11 @@ public class ZombieRoundManager
                 return $"{player.PlayerName}({kind},{side},ctrl:{team},pawn:{pawnTeam},{aliveState})";
             });
 
-        return $"Phase: {_phase} | Players: {connected} alive: {alive} | Humans: {humans} | Zombies: {zombies} | Bots: {bots} | BotsInRound: {ShouldIncludeBots()} | {string.Join("; ", players)}";
+        var mapRotation = _config.GeneralConfig.RotateWorkshopMaps
+            ? $"{_completedRoundsOnCurrentWorkshopMap}/{Math.Max(1, _config.GeneralConfig.RoundsPerWorkshopMap)}"
+            : "off";
+
+        return $"Phase: {_phase} | Players: {connected} alive: {alive} | Humans: {humans} | Zombies: {zombies} | Bots: {bots} | BotsInRound: {ShouldIncludeBots()} | MapRounds: {mapRotation} | {string.Join("; ", players)}";
     }
 
     public HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo gameEventInfo)
@@ -356,8 +372,82 @@ public class ZombieRoundManager
 
         var state = player.GetState(_playerStates);
         _zombieMeleeVisualService.OnZombieKnifeSlash(player, state, @event.Weapon);
+        if (!state.IsZombie && IsSingleUseGrenadeWeaponName(@event.Weapon))
+            ScheduleConsumeThrownGrenade(player, @event.Weapon);
 
         return HookResult.Continue;
+    }
+
+    private static void ScheduleConsumeThrownGrenade(CCSPlayerController player, string weaponName)
+    {
+        Server.NextFrame(() => ConsumeThrownGrenade(player, weaponName));
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            Server.NextFrame(() => ConsumeThrownGrenade(player, weaponName));
+        });
+    }
+
+    private static void ConsumeThrownGrenade(CCSPlayerController player, string weaponName)
+    {
+        if (!player.IsValid || !player.PawnIsAlive)
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        var weaponServices = pawn?.WeaponServices;
+        if (pawn == null || !pawn.IsValid || weaponServices == null)
+            return;
+
+        var firedGrenade = NormalizeWeaponName(weaponName);
+        if (!SingleUseGrenadeWeaponNames.Contains(firedGrenade))
+            return;
+
+        var matchingGrenades = weaponServices.MyWeapons
+            .Select(handle => handle.Value)
+            .Where(weapon => weapon != null && weapon.IsValid && IsWeaponNamed(weapon, firedGrenade))
+            .ToList();
+
+        foreach (var grenade in matchingGrenades)
+        {
+            if (grenade == null || !grenade.IsValid)
+                continue;
+
+            pawn.RemovePlayerItem(grenade);
+            grenade.AcceptInput("Kill");
+        }
+    }
+
+    private static bool IsWeaponNamed(CBasePlayerWeapon weapon, string normalizedWeaponName)
+    {
+        return string.Equals(NormalizeWeaponName(weapon.DesignerName), normalizedWeaponName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(NormalizeWeaponName(GetWeaponNameSafe(weapon)), normalizedWeaponName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetWeaponNameSafe(CBasePlayerWeapon weapon)
+    {
+        try
+        {
+            return weapon.GetWeaponName() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool IsSingleUseGrenadeWeaponName(string? weaponName)
+    {
+        return SingleUseGrenadeWeaponNames.Contains(NormalizeWeaponName(weaponName));
+    }
+
+    private static string NormalizeWeaponName(string? weaponName)
+    {
+        var normalized = weaponName?.Trim() ?? string.Empty;
+        if (normalized.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["weapon_".Length..];
+
+        return normalized;
     }
 
     public HookResult OnItemPickup(EventItemPickup @event, GameEventInfo gameEventInfo)
@@ -746,6 +836,9 @@ public class ZombieRoundManager
             state.ResetRoleRuntimeState();
             state.GlobalCooldowns.Clear();
             state.ActiveAbilities.Clear();
+            state.Money = _progressionService.GetStartingMoney();
+            state.NativeMoneySyncReady = false;
+            state.LastAppliedNativeMoney = 0;
 
             _humanHandler.OnBecomeHuman(player, state);
             player.PrintToChat(ChatText.Human(_config.MessagesConfig.StartingAsHuman));
@@ -1440,7 +1533,10 @@ public class ZombieRoundManager
 
         var roundsPerMap = Math.Max(1, _config.GeneralConfig.RoundsPerWorkshopMap);
         if (_completedRoundsOnCurrentWorkshopMap < roundsPerMap)
+        {
+            Console.WriteLine($"[ZombieMod] Workshop map round {_completedRoundsOnCurrentWorkshopMap}/{roundsPerMap} complete. Staying on current map.");
             return false;
+        }
 
         _completedRoundsOnCurrentWorkshopMap = 0;
 
@@ -1483,11 +1579,26 @@ public class ZombieRoundManager
     {
         var orderedIds = new List<string>();
         foreach (var addonId in _config.GeneralConfig.WorkshopAddonIds ?? [])
+        {
+            if (IsConfiguredWorkshopMapId(addonId))
+                continue;
+
             AddWorkshopAddonId(orderedIds, addonId);
+        }
 
         AddWorkshopAddonId(orderedIds, ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId);
 
         return orderedIds.ToArray();
+    }
+
+    private bool IsConfiguredWorkshopMapId(string? addonId)
+    {
+        if (string.IsNullOrWhiteSpace(addonId))
+            return false;
+
+        var trimmedAddonId = addonId.Trim();
+        return (_config.GeneralConfig.WorkshopMapIds ?? [])
+            .Any(mapId => string.Equals(mapId?.Trim(), trimmedAddonId, StringComparison.Ordinal));
     }
 
     private static void AddWorkshopAddonId(List<string> addonIds, string? addonId)
@@ -1594,12 +1705,65 @@ public class ZombieRoundManager
             ?? GetControllerFromEntity(damageInfo.Inflictor.Value);
     }
 
-    private CCSPlayerController? GetControllerFromEntity(CBaseEntity? entity)
+    private CCSPlayerController? GetControllerFromEntity(CBaseEntity? entity, int depth = 0)
     {
-        if (entity == null || !entity.IsValid || !entity.IsPlayerPawn())
+        if (entity == null || !entity.IsValid || depth > 4)
             return null;
 
-        return GetControllerFromPawn(entity.As<CCSPlayerPawn>());
+        if (entity.IsPlayerPawn())
+            return GetControllerFromPawn(entity.As<CCSPlayerPawn>());
+
+        if (IsGrenadeProjectileEntity(entity))
+        {
+            var projectileOwner = GetGrenadeProjectileOwner(entity);
+            if (projectileOwner != null)
+                return projectileOwner;
+        }
+
+        var owner = entity.OwnerEntity.Value;
+        if (owner != null && owner.IsValid && owner.EntityHandle != entity.EntityHandle)
+        {
+            var ownerController = GetControllerFromEntity(owner, depth + 1);
+            if (ownerController != null)
+                return ownerController;
+        }
+
+        var effectEntity = entity.EffectEntity.Value;
+        if (effectEntity != null && effectEntity.IsValid && effectEntity.EntityHandle != entity.EntityHandle)
+        {
+            var effectController = GetControllerFromEntity(effectEntity, depth + 1);
+            if (effectController != null)
+                return effectController;
+        }
+
+        return null;
+    }
+
+    private CCSPlayerController? GetGrenadeProjectileOwner(CBaseEntity entity)
+    {
+        try
+        {
+            var projectile = entity.As<CBaseCSGrenadeProjectile>();
+            var pawn = projectile.Thrower.Value ?? projectile.OriginalThrower.Value;
+            return GetControllerFromPawn(pawn);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsGrenadeProjectileEntity(CBaseEntity entity)
+    {
+        var designerName = entity.DesignerName;
+        if (string.IsNullOrWhiteSpace(designerName) || !designerName.EndsWith("_projectile", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return designerName.Contains("grenade", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("flashbang", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("molotov", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("incgrenade", StringComparison.OrdinalIgnoreCase)
+            || designerName.Contains("decoy", StringComparison.OrdinalIgnoreCase);
     }
 
     private CCSPlayerController? GetControllerFromPawn(CCSPlayerPawn? pawn)

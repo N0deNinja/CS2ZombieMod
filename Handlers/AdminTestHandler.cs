@@ -54,6 +54,7 @@ public class AdminTestHandler
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.HumanClassCommand, "hclass")}", "Force yourself into a human class for testing.", OnHumanCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.BotsCommand, "zbots")}", "Manage Zombie Mod test bots.", OnBotsCommand);
         _plugin.AddCommand($"css_{NormalizeCommandName(adminConfig.RoundCommand, "zround")}", "Manage Zombie Mod test round flow.", OnRoundCommand);
+        _plugin.AddCommand("css_map", "Change the current map.", OnMapCommand);
         _plugin.AddCommand("css_givexp", "Give global or class XP to a player.", OnGiveXpCommand);
         _plugin.AddCommand("css_setlevel", "Set global or class level for a player.", OnSetLevelCommand);
         _plugin.AddCommand("css_unlockall", "Unlock all progression items for a player.", OnUnlockAllCommand);
@@ -230,6 +231,49 @@ public class AdminTestHandler
                 command.ReplyToCommand($"Unknown round action: {command.GetArg(1)}");
                 break;
         }
+    }
+
+    private void OnMapCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (!CanUse(player, command))
+            return;
+
+        if (command.ArgCount < 2 || IsHelp(command.GetArg(1)))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Usage: css_map <mapname|workshop_id>");
+            var configuredMaps = GetConfiguredMapHelpText();
+            if (!string.IsNullOrWhiteSpace(configuredMaps))
+                command.ReplyToCommand($"[ZM ADMIN] Configured maps: {configuredMaps}");
+
+            return;
+        }
+
+        var requestedMap = command.GetArg(1).Trim();
+        if (!IsSafeMapToken(requestedMap))
+        {
+            command.ReplyToCommand("[ZM ADMIN] Invalid map name. Use only letters, numbers, _, -, /, and .");
+            return;
+        }
+
+        if (TryResolveConfiguredWorkshopMap(requestedMap, out var workshopMapName, out var workshopMapId))
+        {
+            command.ReplyToCommand($"[ZM ADMIN] Changing to workshop map {workshopMapName} ({workshopMapId}).");
+            Console.WriteLine($"[ZombieMod][Admin] {DescribeAdminActor(player)} changing map via css_map to workshop map {workshopMapName} ({workshopMapId}).");
+            Server.ExecuteCommand($"host_workshop_map {workshopMapId}");
+            return;
+        }
+
+        if (requestedMap.All(char.IsDigit))
+        {
+            command.ReplyToCommand($"[ZM ADMIN] Changing to workshop map id {requestedMap}.");
+            Console.WriteLine($"[ZombieMod][Admin] {DescribeAdminActor(player)} changing map via css_map to workshop id {requestedMap}.");
+            Server.ExecuteCommand($"host_workshop_map {requestedMap}");
+            return;
+        }
+
+        command.ReplyToCommand($"[ZM ADMIN] Changing map to {requestedMap}.");
+        Console.WriteLine($"[ZombieMod][Admin] {DescribeAdminActor(player)} changing map via css_map to {requestedMap}.");
+        Server.ExecuteCommand($"changelevel {requestedMap}");
     }
 
     private void OnGiveXpCommand(CCSPlayerController? player, CommandInfo command)
@@ -421,6 +465,7 @@ public class AdminTestHandler
         command.ReplyToCommand($"{kickBotsIndex}. Kick bots: css_zadmin kickbots");
         command.ReplyToCommand($"{restartIndex}. Restart zombie loop: css_zadmin restart");
         command.ReplyToCommand($"{statusIndex}. Status: css_zadmin status");
+        command.ReplyToCommand("Maps: css_map zm_map_name or css_map <workshop_id>");
         command.ReplyToCommand("Progression: css_givexp global 500 | css_setlevel zombie brute 5 | css_unlockall");
         command.ReplyToCommand("Unlocks: css_unlockclass zombie brute | css_unlockability zombie brute selfdestruct");
         command.ReplyToCommand("Bind example: bind kp_1 \"css_zclass brute\"");
@@ -586,6 +631,63 @@ public class AdminTestHandler
     private void KickBots()
     {
         Server.ExecuteCommand("bot_kick");
+    }
+
+    private bool TryResolveConfiguredWorkshopMap(string requestedMap, out string mapName, out string workshopMapId)
+    {
+        var mapNames = _config.GeneralConfig.WorkshopMapNames ?? [];
+        var mapIds = _config.GeneralConfig.WorkshopMapIds ?? [];
+        var normalizedRequest = NormalizeMapToken(requestedMap);
+
+        for (var i = 0; i < mapNames.Length; i++)
+        {
+            var candidateName = mapNames[i]?.Trim() ?? string.Empty;
+            var candidateMapId = i < mapIds.Length
+                ? mapIds[i]?.Trim() ?? string.Empty
+                : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(candidateName)
+                || NormalizeMapToken(candidateName) != normalizedRequest
+                || string.IsNullOrWhiteSpace(candidateMapId)
+                || !candidateMapId.All(char.IsDigit))
+            {
+                continue;
+            }
+
+            mapName = candidateName;
+            workshopMapId = candidateMapId;
+            return true;
+        }
+
+        mapName = string.Empty;
+        workshopMapId = string.Empty;
+        return false;
+    }
+
+    private string GetConfiguredMapHelpText()
+    {
+        return string.Join(", ", (_config.GeneralConfig.WorkshopMapNames ?? [])
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim()));
+    }
+
+    private static bool IsSafeMapToken(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && value.All(character => char.IsLetterOrDigit(character)
+                || character is '_' or '-' or '/' or '.');
+    }
+
+    private static string NormalizeMapToken(string value)
+    {
+        return value.Trim().Replace('\\', '/').ToLowerInvariant();
+    }
+
+    private static string DescribeAdminActor(CCSPlayerController? player)
+    {
+        return player is { IsValid: true }
+            ? $"{player.PlayerName} ({player.SteamID})"
+            : "console";
     }
 
     private int ParseCount(CommandInfo command, int argIndex)

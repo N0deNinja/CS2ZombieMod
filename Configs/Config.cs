@@ -1,6 +1,7 @@
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using ReclaimCS.Shared.Administration;
+using ReclaimCS.Shared.KillFeed;
 using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
 using ZombieModPlugin.Humans.Models;
@@ -18,6 +19,7 @@ public class BaseConfig : BasePluginConfig
     public ReclaimAdminOptions Admin { get; set; } = new();
     public AdminTestConfig AdminTestConfig { get; set; } = new();
     public SoundConfig SoundConfig { get; set; } = new();
+    public KillFeedIconOptions KillFeedIcons { get; set; } = new();
     public ZombieMeleeVisualConfig ZombieMeleeVisualConfig { get; set; } = new();
     public BlockadeConfig BlockadeConfig { get; set; } = new();
     public ChatConfig ChatConfig { get; set; } = new();
@@ -46,10 +48,10 @@ public class GeneralConfig
         ..ReclaimPlayerModels.ZombieModWorkshopAddonIds,
         ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId
     ];
-    public bool RotateWorkshopMaps { get; set; } = false;
+    public bool RotateWorkshopMaps { get; set; } = true;
     public int RoundsPerWorkshopMap { get; set; } = 5;
-    public string[] WorkshopMapIds { get; set; } = ["3685437201", "3222984182", "3283778158"];
-    public string[] WorkshopMapNames { get; set; } = ["zm_liquid_anomaly_s", "zm_silent_village", "zm_mediumzm"];
+    public string[] WorkshopMapIds { get; set; } = ["3623739053", "3685437201", "3222984182", "3283778158"];
+    public string[] WorkshopMapNames { get; set; } = ["zm_vents_remake_m", "zm_liquid_anomaly_s", "zm_silent_village", "zm_mediumzm"];
 }
 
 public class AdminTestConfig
@@ -238,7 +240,7 @@ public class ZombieConfig
         {
             Id = "classic",
             Name = "Classic Zombie",
-            Health = 1200,
+            Health = 6000,
             SpeedModifier = 1.0f,
             Damage = 25,
             Gravity = 1.0f,
@@ -250,7 +252,7 @@ public class ZombieConfig
         {
             Id = "molong",
             Name = "VIP Molong",
-            Health = 1800,
+            Health = 6000,
             SpeedModifier = 1.05f,
             Damage = 30,
             Gravity = 0.9f,
@@ -262,7 +264,7 @@ public class ZombieConfig
         {
             Id = "runner",
             Name = "Runner",
-            Health = 850,
+            Health = 6000,
             SpeedModifier = 1.3f,
             Damage = 20,
             Gravity = 1.0f,
@@ -274,7 +276,7 @@ public class ZombieConfig
         {
             Id = "brute",
             Name = "Brute",
-            Health = 2000,
+            Health = 6000,
             SpeedModifier = 0.85f,
             Damage = 40,
             Gravity = 1.0f,
@@ -286,7 +288,7 @@ public class ZombieConfig
         {
             Id = "cultist",
             Name = "Cultist",
-            Health = 1050,
+            Health = 6000,
             SpeedModifier = 1.0f,
             Damage = 20,
             Gravity = 1.0f,
@@ -298,7 +300,7 @@ public class ZombieConfig
         {
             Id = "frozen",
             Name = "Frozen Zombie",
-            Health = 1150,
+            Health = 6000,
             SpeedModifier = 0.95f,
             Damage = 22,
             Gravity = 1.0f,
@@ -310,7 +312,7 @@ public class ZombieConfig
         {
             Id = "lurker",
             Name = "Lurker",
-            Health = 800,
+            Health = 6000,
             SpeedModifier = 1.2f,
             Damage = 18,
             Gravity = 0.75f,
@@ -334,7 +336,7 @@ public class HumanConfig
     public string PlayerModel { get; set; } = ReclaimPlayerModels.ModelPaths.EarthGovSecurity;
     public string DefaultHumanClassId { get; set; } = "security";
     public string[] DefaultWeapons { get; set; } = ["weapon_knife", "weapon_usp_silencer"];
-    public int StartingMoney { get; set; } = 10000;
+    public int StartingMoney { get; set; } = 6000;
     public bool UnlimitedMoney { get; set; } = false;
     public int NativeMoneyDisplayCap { get; set; } = 65535;
     public bool BuyAnywhereAnytime { get; set; } = true;
@@ -362,7 +364,7 @@ public class HumanConfig
             SpeedModifier = 1.0f,
             Gravity = 1.0f,
             DefaultWeapons = ["weapon_knife", "weapon_usp_silencer"],
-            StartingMoney = 10000
+            StartingMoney = 6000
         },
         new HumanClass
         {
@@ -373,7 +375,7 @@ public class HumanConfig
             SpeedModifier = 1.02f,
             Gravity = 1.0f,
             DefaultWeapons = ["weapon_knife", "weapon_usp_silencer"],
-            StartingMoney = 10000
+            StartingMoney = 6000
         },
         new HumanClass
         {
@@ -386,7 +388,7 @@ public class HumanConfig
             InfectionHitsRequired = 3,
             DefaultWeapons = ["weapon_knife", "weapon_usp_silencer"],
             DefaultAbilities = [AbilityType.MultiJump],
-            StartingMoney = 10000
+            StartingMoney = 6000
         },
         new HumanClass
         {
@@ -400,7 +402,7 @@ public class HumanConfig
             ZombieKnockbackForce = 760f,
             ZombieKnockbackUpForce = 130f,
             DefaultWeapons = ["weapon_knife", "weapon_deagle"],
-            StartingMoney = 10000
+            StartingMoney = 6000
         },
         new HumanClass
         {
@@ -414,7 +416,7 @@ public class HumanConfig
             ZombieKnockbackForce = 650f,
             ZombieKnockbackUpForce = 110f,
             DefaultWeapons = ["weapon_knife", "weapon_usp_silencer", "weapon_hegrenade", "weapon_smokegrenade"],
-            StartingMoney = 10000
+            StartingMoney = 6000
         }
     ];
 }

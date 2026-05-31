@@ -71,11 +71,10 @@ The deploy scripts preserve plugin SQLite data by excluding `data/` and
 start-server.bat
 ```
 
-By default this starts a LAN/local server on `zm_liquid_anomaly_s` at port
-`27015`. The workshop IDs are still mounted and sent to clients through
-MultiAddonManager, but the server loads the extracted map VPKs by their internal
-map names because some workshop items do not expose a usable map list to
-`host_workshop_map`.
+By default this starts a LAN/local server on `zm_vents_remake_m` at port
+`27015`. Workshop maps are loaded through `+host_workshop_map` at startup and
+`host_workshop_map` during rotation. Do not put workshop map IDs in
+MultiAddonManager; use it only for extra non-map model or sound packs.
 The script copies and executes `server-config/zombiemod_server.cfg`, which
 disables default bots, warmup, freeze time, team balancing, and enables random
 spawn behavior for the local Zombie Mod server.
@@ -160,6 +159,25 @@ by default because CS2 point sound entities can behave like fixed world sounds
 after playback starts. Keep ability sound clips short, or enable tracked sounds
 only for stationary effects where `StopSound` is more important than following
 the player.
+
+## Kill Feed Icons
+
+Zombie Mod exposes the shared `KillFeedIcons` config section. Set
+`KillFeedIcons.Enabled` to `true` and map death-event weapon keys to mounted CS2
+equipment icon keys, for example:
+
+```json
+"KillFeedIcons": {
+  "Enabled": true,
+  "Icons": {
+    "knife": { "Icon": "reclaim_claws" },
+    "hegrenade": { "Icon": "reclaim_explosion" }
+  }
+}
+```
+
+Custom SVGs should be mounted by an addon under
+`panorama/images/icons/equipment/<icon>.svg`.
 
 ## Player Chat Commands
 
@@ -362,9 +380,9 @@ SpawnScatterDelaySeconds = 0.3
 IncludeBotsInRound = false
 AirAccelerate = 100
 RotateWorkshopMaps = true
-RoundsPerWorkshopMap = 1
-WorkshopMapIds = 3685437201, 3222984182, 3283778158
-WorkshopMapNames = zm_liquid_anomaly_s, zm_silent_village, zm_mediumzm
+RoundsPerWorkshopMap = 5
+WorkshopMapIds = 3623739053, 3685437201, 3222984182, 3283778158
+WorkshopMapNames = zm_vents_remake_m, zm_liquid_anomaly_s, zm_silent_village, zm_mediumzm
 ```
 
 The round waits until `MinimumPlayersToStart` playable players are connected

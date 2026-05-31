@@ -12,18 +12,23 @@ $mapsDir = Join-Path $gameCsgoDir "maps"
 
 $maps = @(
     @{
+        Id = "3623739053"
+        ArchiveCandidates = @("3623739053_dir.vpk", "3623739053.vpk")
+        MapFile = "zm_vents_remake_m.vpk"
+    },
+    @{
         Id = "3685437201"
-        Archive = "3685437201_dir.vpk"
+        ArchiveCandidates = @("3685437201_dir.vpk", "3685437201.vpk")
         MapFile = "zm_liquid_anomaly_s.vpk"
     },
     @{
         Id = "3222984182"
-        Archive = "3222984182.vpk"
+        ArchiveCandidates = @("3222984182.vpk", "3222984182_dir.vpk")
         MapFile = "zm_silent_village.vpk"
     },
     @{
         Id = "3283778158"
-        Archive = "3283778158_dir.vpk"
+        ArchiveCandidates = @("3283778158_dir.vpk", "3283778158.vpk")
         MapFile = "zm_mediumzm.vpk"
     }
 )
@@ -38,11 +43,19 @@ if (!(Test-Path -LiteralPath $mapsDir)) {
 }
 
 foreach ($map in $maps) {
-    $archive = Join-Path $workshopRoot (Join-Path $map.Id $map.Archive)
+    $archive = $null
+    foreach ($candidate in $map.ArchiveCandidates) {
+        $candidatePath = Join-Path $workshopRoot (Join-Path $map.Id $candidate)
+        if (Test-Path -LiteralPath $candidatePath) {
+            $archive = $candidatePath
+            break
+        }
+    }
+
     $target = Join-Path $mapsDir $map.MapFile
 
-    if (!(Test-Path -LiteralPath $archive)) {
-        Write-Warning "Workshop archive for $($map.Id) is missing: $archive"
+    if (!$archive) {
+        Write-Warning "Workshop archive for $($map.Id) is missing. Checked: $($map.ArchiveCandidates -join ', ')"
         continue
     }
 

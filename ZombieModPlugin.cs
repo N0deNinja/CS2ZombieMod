@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Utils;
 using ReclaimCS.Shared.Administration;
 using ReclaimCS.Shared.CounterStrike;
+using ReclaimCS.Shared.KillFeed;
 using ReclaimCS.Shared.Menus;
 using ReclaimCS.Shared.PlayerModels;
 using ZombieModPlugin.Abilities;
@@ -54,6 +55,8 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     public void OnConfigParsed(BaseConfig config)
     {
+        config.KillFeedIcons ??= new();
+        config.KillFeedIcons.Normalize();
         Config = config;
     }
 
@@ -91,7 +94,8 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
             Config,
             this,
             progressionService,
-            () => _roundManager?.IsBlockadePlacementAllowed == true);
+            () => _roundManager?.IsBlockadePlacementAllowed == true,
+            () => _roundManager?.BlockadePlacementDebugState ?? "roundManager=null");
         _blockadeService = blockadeService;
 
         _generalHandlers = new GeneralHandlers(_playerStates, Config, progressionService);
@@ -147,6 +151,12 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         RegisterEventHandler<EventWeaponFire>((@event, gameEventInfo) =>
             RunEvent("EventWeaponFire", @event.Userid, () => _roundManager.OnWeaponFire(@event, gameEventInfo)));
         RegisterEventHandler<EventPlayerDeath>((@event, gameEventInfo) =>
+            RunEvent("EventPlayerDeath.kill-feed-icons", @event.Userid, () =>
+            {
+                KillFeedIconService.Apply(Config.KillFeedIcons, @event);
+                return HookResult.Continue;
+            }), HookMode.Pre);
+        RegisterEventHandler<EventPlayerDeath>((@event, gameEventInfo) =>
             RunEvent("EventPlayerDeath", @event.Userid, () => _roundManager.OnPlayerDeath(@event, gameEventInfo)));
         RegisterEventHandler<EventRoundEnd>((@event, gameEventInfo) =>
             RunEvent("EventRoundEnd", null, () => _roundManager.OnRoundEnd(@event, gameEventInfo)));
@@ -180,6 +190,8 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
                     _roundManager?.ApplyZombieServerRules();
                     _roundManager?.EnsureRoundLifecycleRunning();
                 });
+                ScheduleServerRulesRetry("map-start", 1);
+                ScheduleServerRulesRetry("map-start", 3);
             });
         });
 
@@ -320,6 +332,7 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
 
     private void OnServerPrecacheResources(ResourceManifest manifest)
     {
+        KillFeedIconService.PrecacheResources(Config.KillFeedIcons, manifest);
         PrecacheConfiguredModel(manifest, Config.ZombieConfig.PlayerModel);
         foreach (var zombieType in Config.ZombieConfig.ZombieTypes)
             PrecacheConfiguredModel(manifest, zombieType.PlayerModel);
@@ -362,10 +375,31 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         if (ReclaimPlayerModels.TryFind(modelPath, out var model))
         {
             manifest.AddPlayerModelResources(model);
+            foreach (var path in model.GetResourcePaths())
+                PrecacheEngineModel(path);
+
             return;
         }
 
-        manifest.AddPlayerModelResource(modelPath);
+        var normalized = ReclaimPlayerModels.NormalizeModelPath(modelPath);
+        manifest.AddPlayerModelResource(normalized);
+        PrecacheEngineModel(normalized);
+    }
+
+    private static void PrecacheEngineModel(string? modelPath)
+    {
+        var normalized = ReclaimPlayerModels.NormalizeModelPath(modelPath);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        try
+        {
+            Server.PrecacheModel(normalized);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ZombieMod] Failed to precache model {normalized}: {ex.Message}");
+        }
     }
 
     private static void PrecacheConfiguredResource(ResourceManifest manifest, string resourcePath)
@@ -428,11 +462,29 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
     {
         var orderedIds = new List<string>();
         foreach (var addonId in Config.GeneralConfig.WorkshopAddonIds ?? [])
+        {
+            if (IsConfiguredWorkshopMapId(addonId))
+            {
+                CrashBreadcrumbs.Log($"MultiAddonManager skipped workshop map id addon={addonId} map={mapName}");
+                continue;
+            }
+
             AddWorkshopAddonId(orderedIds, addonId);
+        }
 
         AddWorkshopAddonId(orderedIds, ReclaimPlayerModels.ReclaimCharactersWorkshopAddonId);
 
         return orderedIds.ToArray();
+    }
+
+    private bool IsConfiguredWorkshopMapId(string? addonId)
+    {
+        if (string.IsNullOrWhiteSpace(addonId))
+            return false;
+
+        var trimmedAddonId = addonId.Trim();
+        return (Config.GeneralConfig.WorkshopMapIds ?? [])
+            .Any(mapId => string.Equals(mapId?.Trim(), trimmedAddonId, StringComparison.Ordinal));
     }
 
     private static void AddWorkshopAddonId(List<string> addonIds, string? addonId)
@@ -468,6 +520,21 @@ public class ZombieModPlugin : BasePlugin, IPluginConfig<BaseConfig>
         {
             _roundManager?.ApplyZombieServerRules();
             _roundManager?.EnsureRoundLifecycleRunning();
+        });
+        ScheduleServerRulesRetry("all-plugins-loaded", 1);
+        ScheduleServerRulesRetry("all-plugins-loaded", 3);
+    }
+
+    private void ScheduleServerRulesRetry(string reason, int delaySeconds)
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            CrashBreadcrumbs.SafeNextFrame($"{reason} delayed server rules {delaySeconds}s", () =>
+            {
+                _roundManager?.ApplyZombieServerRules();
+                _roundManager?.EnsureRoundLifecycleRunning();
+            });
         });
     }
 
